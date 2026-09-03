@@ -2,6 +2,7 @@ import { useRouter } from "expo-router";
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { courses, type Course } from "../src/lib/courses";
+import { isNightHour, recommendCourses } from "../src/lib/recommend";
 
 function CourseItem({ course }: { course: Course }) {
   const router = useRouter();
@@ -39,12 +40,22 @@ export default function HomeScreen() {
   // 폰 하단 시스템 바(홈 버튼 줄)에 버튼이 가려지지 않게 여백을 준다.
   const insets = useSafeAreaInsets();
 
+  // 지금 시각 기준 추천 순서 (화면을 열 때마다 다시 계산)
+  const now = new Date();
+  const night = isNightHour(now.getHours());
+  const sorted = recommendCourses(courses, now);
+
   return (
     <View style={styles.container}>
       <FlatList
-        data={courses}
+        data={sorted}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => <CourseItem course={item} />}
+        ListHeaderComponent={
+          <Text style={styles.hint}>
+            {night ? "밤 코스 우선" : "가까운 순"} · 서울 강서 기준
+          </Text>
+        }
         contentContainerStyle={styles.list}
         ListEmptyComponent={
           <Text style={styles.empty}>아직 코스가 없습니다.</Text>
@@ -63,6 +74,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f5f5f7" },
   list: { padding: 16, gap: 12 },
+  hint: { fontSize: 13, color: "#888" },
   card: {
     backgroundColor: "#fff",
     borderRadius: 12,
