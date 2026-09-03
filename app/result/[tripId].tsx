@@ -9,13 +9,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { captureRef } from "react-native-view-shot";
 import { getCourse } from "../../src/lib/courses";
 import { judgeCompletion, pathLengthMeters } from "../../src/lib/geo";
-import { loadTrip, type Trip } from "../../src/lib/trips";
-
-// 19시부터 새벽 6시 전까지는 밤
-function isNight(epochMs: number): boolean {
-  const hour = new Date(epochMs).getHours();
-  return hour >= 19 || hour < 6;
-}
+import { supabase } from "../../src/lib/supabase";
+import { isNight, loadTrip, saveTrip, uploadTrip, type Trip } from "../../src/lib/trips";
 
 function formatDate(epochMs: number): string {
   const d = new Date(epochMs);
@@ -23,6 +18,8 @@ function formatDate(epochMs: number): string {
   const dd = String(d.getDate()).padStart(2, "0");
   return `${d.getFullYear()}.${mm}.${dd}`;
 }
+
+type SyncState = "none" | "uploading" | "done" | "failed";
 
 export default function ResultScreen() {
   const { tripId } = useLocalSearchParams<{ tripId: string }>();
@@ -35,11 +32,14 @@ export default function ResultScreen() {
   const [trip, setTrip] = useState<Trip | undefined>();
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [sync, setSync] = useState<SyncState>("none");
+  const [syncError, setSyncError] = useState("");
 
   useEffect(() => {
     loadTrip(tripId).then((t) => {
       setTrip(t);
       setLoaded(true);
+      if (t?.serverId) setSync("done");
     });
   }, [tripId]);
 
@@ -50,6 +50,30 @@ export default function ResultScreen() {
   const result =
     trip && course ? judgeCompletion(course.polyline, trip.points) : undefined;
   const overlapPercent = result ? Math.round(result.overlap * 100) : 0;
+
+  // 서버(Supabase)에 올린다. 아직 안 올라간 기록만. 실패해도 앱은 계속 동작.
+  async function syncToServer(t: Trip) {
+    if (!supabase || t.serverId) return;
+    setSync("uploading");
+    setSyncError("");
+    try {
+      const serverId = await uploadTrip(t, getCourse(t.courseId));
+      const updated = { ...t, serverId };
+      await saveTrip(updated);
+      setTrip(updated);
+      setSync("done");
+    } catch (e) {
+      setSync("failed");
+      setSyncError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  // 기록을 읽자마자 한 번 올린다
+  useEffect(() => {
+    if (loaded && trip && !trip.serverId) syncToServer(trip);
+    // trip.id가 바뀔 때만 (같은 기록을 두 번 올리지 않도록)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, trip?.id]);
 
   // 카드를 PNG 파일로 만든다. 실패하면 undefined.
   async function captureCard(): Promise<string | undefined> {
@@ -99,6 +123,16 @@ export default function ResultScreen() {
     }
   }
 
+  const syncText = !supabase
+    ? "서버 미설정 (.env 없음) · 폰에만 저장됨"
+    : sync === "uploading"
+      ? "서버에 저장 중..."
+      : sync === "done"
+        ? "서버에 저장됨"
+        : sync === "failed"
+          ? `서버 저장 실패: ${syncError}`
+          : "";
+
   return (
     <View style={[styles.container, { paddingBottom: 16 + insets.bottom }]}>
       {!loaded ? (
@@ -136,6 +170,17 @@ export default function ResultScreen() {
               {result.endOk ? "" : " · 끝점 벗어남"}
             </Text>
           ) : null}
+
+          <View style={styles.syncRow}>
+            <Text style={sync === "failed" ? styles.syncFailed : styles.detail}>
+              {syncText}
+            </Text>
+            {sync === "failed" ? (
+              <Pressable onPress={() => syncToServer(trip)}>
+                <Text style={styles.retry}>다시 시도</Text>
+              </Pressable>
+            ) : null}
+          </View>
 
           <View style={styles.row}>
             <Pressable
@@ -182,6 +227,9 @@ const styles = StyleSheet.create({
   cardNotDone: { color: "#ff6b6b", fontSize: 20, fontWeight: "700", marginTop: 8 },
   cardDate: { color: "#9ab", fontSize: 13, marginTop: 8 },
   detail: { fontSize: 13, color: "#777" },
+  syncRow: { flexDirection: "row", alignItems: "center", gap: 12, flexWrap: "wrap" },
+  syncFailed: { fontSize: 13, color: "#c0392b", flexShrink: 1 },
+  retry: { fontSize: 13, color: "#0a66c2", fontWeight: "600" },
   row: { flexDirection: "row", gap: 10 },
   button: {
     borderRadius: 12,

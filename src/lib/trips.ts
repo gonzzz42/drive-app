@@ -1,4 +1,7 @@
 import { Directory, File, Paths } from "expo-file-system";
+import type { Course } from "./courses";
+import { judgeCompletion, pathLengthMeters } from "./geo";
+import { ensureSignedIn, supabase } from "./supabase";
 
 // 주행 기록 하나. 폰 안의 문서 폴더에 trips/<id>.json 으로 저장한다.
 
@@ -14,6 +17,7 @@ export type Trip = {
   startedAt: number; // epoch ms
   endedAt: number; // epoch ms
   points: TripPoint[];
+  serverId?: string; // Supabase trips.id (서버에 저장됐으면 있음)
 };
 
 function tripsDir(): Directory {
@@ -39,4 +43,44 @@ export async function loadTrip(id: string | undefined): Promise<Trip | undefined
   } catch {
     return undefined;
   }
+}
+
+// 19시부터 새벽 6시 전까지는 밤
+export function isNight(epochMs: number): boolean {
+  const hour = new Date(epochMs).getHours();
+  return hour >= 19 || hour < 6;
+}
+
+// 기록을 Supabase trips 테이블에 올린다. 성공하면 서버 id를 돌려준다.
+// RLS 때문에 user_id는 반드시 로그인한 사용자여야 한다.
+export async function uploadTrip(trip: Trip, course: Course | undefined): Promise<string> {
+  if (!supabase) throw new Error("Supabase 설정이 없습니다 (.env 확인)");
+  const userId = await ensureSignedIn();
+
+  const result = course ? judgeCompletion(course.polyline, trip.points) : undefined;
+  const row = {
+    user_id: userId,
+    course_id: course?.id ?? null,
+    started_at: new Date(trip.startedAt).toISOString(),
+    ended_at: new Date(trip.endedAt).toISOString(),
+    distance_km: Math.round(pathLengthMeters(trip.points) / 100) / 10,
+    duration_min: Math.round((trip.endedAt - trip.startedAt) / 60000),
+    is_night: isNight(trip.startedAt),
+    overlap_pct: result ? Math.round(result.overlap * 100) : null,
+    completed: result?.completed ?? false,
+    path: trip.points,
+  };
+
+  let { data, error } = await supabase.from("trips").insert(row).select("id").single();
+
+  // 서버 courses 테이블에 이 코스가 없으면(외래키 오류 23503) 코스 없이 다시 저장
+  if (error?.code === "23503" && row.course_id) {
+    ({ data, error } = await supabase
+      .from("trips")
+      .insert({ ...row, course_id: null })
+      .select("id")
+      .single());
+  }
+  if (error || !data) throw error ?? new Error("서버 저장 실패");
+  return data.id as string;
 }

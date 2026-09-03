@@ -49,6 +49,22 @@ npx expo start --clear
 npm run typecheck
 ```
 
+## Supabase 연결 (기록을 서버에 저장)
+
+1. supabase.com에서 프로젝트를 만든다.
+2. SQL Editor에 `supabase/schema.sql`을 붙여넣고 Run. 이어서 `supabase/seed_courses.sql`도 Run (코스 테이블 채우기).
+3. Authentication → Sign In / Providers에서 **Allow anonymous sign-ins**를 켠다. 앱은 익명 로그인을 쓴다.
+4. Project Settings → API의 Project URL과 anon public 키를 `.env`에 넣는다. `.env.example`을 복사해서 만들면 된다.
+
+```
+EXPO_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=eyJ...
+```
+
+5. `.env`를 만들거나 바꾸면 `npx expo start`를 껐다가 다시 켠다.
+
+결과 화면 아래에 "서버에 저장됨"이 뜨면 성공. Supabase 대시보드 Table Editor → trips에서 행을 볼 수 있다. `.env`가 없으면 "서버 미설정"이라고 뜨고 폰에만 저장된다.
+
 ## Android에서 지도가 검게만 보일 때
 
 Expo Go 안드로이드 앱에 들어 있는 구글 지도 키가 만료되어(Expo 이슈 #49323, 2026-08) Expo Go에서는 지도 타일이 안 그려진다. 코드 문제가 아니고 앱 설정으로도 못 고친다. 내 키를 넣은 **개발 빌드**를 만들면 된다.

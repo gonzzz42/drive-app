@@ -20,7 +20,7 @@ create table if not exists public.courses (
   start_lat double precision not null,
   start_lng double precision not null,
   end_lat double precision not null,
-  end_lng double null,
+  end_lng double precision not null,
   best_time text,          -- 'weekday_night' 등
   avoid_time text,
   tmap_url text,
