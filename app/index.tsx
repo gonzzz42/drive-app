@@ -1,5 +1,6 @@
-import { Link, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { courses, type Course } from "../src/lib/courses";
 
 function CourseItem({ course }: { course: Course }) {
@@ -34,6 +35,10 @@ function CourseItem({ course }: { course: Course }) {
 }
 
 export default function HomeScreen() {
+  const router = useRouter();
+  // 폰 하단 시스템 바(홈 버튼 줄)에 버튼이 가려지지 않게 여백을 준다.
+  const insets = useSafeAreaInsets();
+
   return (
     <View style={styles.container}>
       <FlatList
@@ -45,11 +50,12 @@ export default function HomeScreen() {
           <Text style={styles.empty}>아직 코스가 없습니다.</Text>
         }
       />
-      <Link href="/album" asChild>
-        <Pressable style={styles.albumButton}>
-          <Text style={styles.albumButtonText}>도감 보기</Text>
-        </Pressable>
-      </Link>
+      <Pressable
+        style={[styles.albumButton, { marginBottom: 16 + insets.bottom }]}
+        onPress={() => router.push("/album")}
+      >
+        <Text style={styles.albumButtonText}>도감 보기</Text>
+      </Pressable>
     </View>
   );
 }

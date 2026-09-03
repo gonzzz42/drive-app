@@ -1,14 +1,17 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getCourse } from "../../src/lib/courses";
 
 export default function RecordScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  // 폰 하단 시스템 바(홈 버튼 줄)에 버튼이 가려지지 않게 여백을 준다.
+  const insets = useSafeAreaInsets();
   const course = getCourse(id);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingBottom: 16 + insets.bottom }]}>
       <Text style={styles.name}>{course?.name ?? "알 수 없는 코스"}</Text>
       <Text style={styles.todo}>GPS 기록은 다음 단계에서 추가됩니다.</Text>
 
