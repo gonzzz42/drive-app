@@ -32,6 +32,15 @@ export function distanceMeters(a: LatLng, b: LatLng): number {
   return 2 * EARTH_RADIUS_M * Math.asin(Math.sqrt(h));
 }
 
+// 궤적을 따라 이동한 총 거리 (점 사이 거리의 합)
+export function pathLengthMeters(path: LatLng[]): number {
+  let total = 0;
+  for (let i = 0; i < path.length - 1; i++) {
+    total += distanceMeters(path[i], path[i + 1]);
+  }
+  return total;
+}
+
 // 점 p에서 선분 a-b까지의 거리.
 // 수십 km 범위에서는 위경도를 평면(미터)으로 펴서 계산해도 충분하다.
 function distanceToSegmentMeters(p: LatLng, a: LatLng, b: LatLng): number {
