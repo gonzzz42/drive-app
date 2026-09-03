@@ -1,0 +1,44 @@
+[
+  {
+    "id": "olympic-magok-gayang-night",
+    "name": "마곡 → 가양 빛의 관문",
+    "source": "blackpearl_dan DcqlwBwKdvq",
+    "region": "서울서부",
+    "tags": ["밤", "조명", "도시고속", "서울진입"],
+    "start_name": "트레이더스 마곡 / 마곡대교",
+    "end_name": "가양대교",
+    "best_time": "평일 21시 이후",
+    "avoid_time": "주말 낮·퇴근 정체",
+    "search_tmap": "가양대교",
+    "note": "캡션 기준. 장보기 후 서울 방향. 방음벽 조명 약 220m. 직접 재실측 필요.",
+    "status": "unverified"
+  },
+  {
+    "id": "paju-77-pyeonghwa-goyang",
+    "name": "파주 77번·평화로 → 고양",
+    "source": "blackpearl_dan 그리드 '드라이브 코스 추천'",
+    "region": "경기서북",
+    "tags": ["국도", "파주", "고양", "단독주택가"],
+    "start_name": "파주 평화로",
+    "end_name": "고양",
+    "best_time": "확인 필요",
+    "avoid_time": "확인 필요",
+    "search_tmap": "파주 평화로",
+    "note": "계정 썸네일 문구. 구간 시작·끝을 영상 다시 보고 확정할 것.",
+    "status": "title_only"
+  },
+  {
+    "id": "jayu-ro-haengju-imjingak",
+    "name": "자유로 행주 → 임진각",
+    "source": "동계열 서북 드라이브 + 77번 국도",
+    "region": "경기서북",
+    "tags": ["강변", "밤", "장거리", "파주"],
+    "start_name": "행주대교 북단",
+    "end_name": "임진각",
+    "best_time": "평일 밤·노을",
+    "avoid_time": "주말 오후",
+    "search_tmap": "임진각",
+    "note": "계정 권역과 맞음. 공식 넣기 전 본인 1회 주행.",
+    "status": "candidate"
+  }
+]

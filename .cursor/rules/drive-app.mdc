@@ -1,0 +1,12 @@
+---
+description: Drive course app rules
+alwaysApply: true
+---
+
+한국 드라이브 코스 탐색 앱. UI는 한국어만.
+
+하지 말 것: 인스타 편집기, 자체 내비, 속도 랭킹, 언어 토글, 카카오 네이티브 SDK, 백그라운드 GPS.
+
+스택: Expo, TypeScript, expo-router, react-native-maps, expo-location.
+한 번에 화면/기능 하나만 수정한다.
+완료 후 바꾼 파일, 테스트 순서, 남은 작업을 한국어로 적는다.

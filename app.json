@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "드라이브 코스",
+    "slug": "drive-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "driveapp",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.driveapp.app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "주행 경로를 기록하기 위해 위치가 필요합니다."
+      }
+    },
+    "android": {
+      "package": "com.driveapp.app",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "주행 경로를 기록하기 위해 위치가 필요합니다.",
+          "isAndroidBackgroundLocationEnabled": false
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "savePhotosPermission": "결과 카드를 사진첩에 저장합니다."
+        }
+      ],
+      "expo-sharing",
+      "expo-status-bar"
+    ]
+  }
+}
