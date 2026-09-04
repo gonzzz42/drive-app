@@ -4,6 +4,7 @@ import { Linking } from "react-native";
 // 네이티브 SDK는 쓰지 않는다.
 //
 // 참고
+// - 내비 목적지는 코스의 "시작점"이다. 코스 시작까지 내비로 가고, 코스는 직접 탄다.
 // - 티맵은 tmap:// 스킴을 공식 문서로 공개하지 않는다. 아래 형식은 개발자 보고에서
 //   iOS/Android 모두 동작이 확인된 것(goalname/goalx/goaly + referrer)이다.
 // - 카카오내비는 외부 앱용 URL 스킴을 지원하지 않는다(카카오모빌리티 답변, 2025-05).
@@ -14,10 +15,10 @@ import { Linking } from "react-native";
 //   대신 openURL을 바로 시도하고, 실패(reject)하면 다음 URL로 넘어간다.
 
 export type NaviTarget = {
-  name: string; // 목적지 이름 (예: 가양대교)
+  name: string; // 목적지 이름 (예: 마곡대교)
   lat?: number; // 목적지 위도 (없으면 keyword 검색으로 연다)
   lng?: number; // 목적지 경도
-  keyword: string; // 좌표가 없을 때 쓸 검색어 (courses.json의 search_tmap)
+  keyword: string; // 좌표가 없을 때 쓸 검색어
 };
 
 function hasCoords(t: NaviTarget): t is NaviTarget & { lat: number; lng: number } {
@@ -49,6 +50,11 @@ export function kakaoUrls(t: NaviTarget): string[] {
   }
   const q = encodeURIComponent(t.keyword);
   return [`kakaomap://search?q=${q}`, `https://m.map.kakao.com/scheme/search?q=${q}`];
+}
+
+// 티맵을 먼저 시도하고, 티맵이 없으면 카카오맵(앱 → 웹 브리지) 순서.
+export function naviUrls(t: NaviTarget): string[] {
+  return [...tmapUrls(t), ...kakaoUrls(t)];
 }
 
 // URL을 순서대로 열어 보고, 하나라도 성공하면 true.

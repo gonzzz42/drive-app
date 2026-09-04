@@ -1,5 +1,5 @@
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import {
   Alert,
   Pressable,
@@ -16,7 +16,7 @@ import MapView, {
 } from "react-native-maps";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getCourse, type Course } from "../../src/lib/courses";
-import { kakaoUrls, openFirst, tmapUrls } from "../../src/lib/navi";
+import { naviUrls, openFirst } from "../../src/lib/navi";
 
 // 기본 좌표: 서울 시청
 const SEOUL: Region = {
@@ -69,6 +69,7 @@ export default function CourseScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const mapRef = useRef<MapView>(null);
+  const [opening, setOpening] = useState(false);
   const course = getCourse(id);
 
   if (!course) {
@@ -90,23 +91,27 @@ export default function CourseScreen() {
   const distance =
     course.distance_km > 0 ? `${course.distance_km} km` : "거리 미정";
 
+  // 내비 목적지는 코스 "시작점". 좌표가 있으면 좌표, 없으면 시작점 이름으로 검색.
   const target = {
-    name: course.end_name,
-    lat: course.end_lat,
-    lng: course.end_lng,
-    keyword: course.search_tmap,
+    name: course.start_name,
+    lat: course.start_lat,
+    lng: course.start_lng,
+    keyword: course.start_name,
   };
 
-  async function openTmap() {
-    const ok = await openFirst(tmapUrls(target));
-    if (!ok) {
-      Alert.alert("티맵을 열 수 없습니다", "티맵 앱이 설치되어 있는지 확인하세요.");
+  // 티맵을 먼저, 없으면 카카오맵. 기록 화면으로 자동 이동하지 않는다.
+  async function openNavi() {
+    if (opening) return;
+    setOpening(true);
+    try {
+      const ok = await openFirst(naviUrls(target));
+      if (!ok) {
+        // 티맵 → 카카오맵 → 카카오 웹 순서로 모두 실패한 경우 (브라우저까지 없을 때)
+        Alert.alert("내비를 열 수 없습니다", "티맵, 카카오맵, 브라우저를 모두 열지 못했습니다.");
+      }
+    } finally {
+      setOpening(false);
     }
-  }
-
-  function openKakao() {
-    // 앱이 없으면 카카오 웹 브리지(설치 안내 페이지)가 열린다.
-    openFirst(kakaoUrls(target));
   }
 
   function fitMap() {
@@ -157,19 +162,21 @@ export default function CourseScreen() {
       </ScrollView>
 
       <View style={[styles.buttons, { paddingBottom: 16 + insets.bottom }]}>
-        <View style={styles.row}>
-          <Pressable style={[styles.button, styles.naviButton]} onPress={openTmap}>
-            <Text style={styles.naviButtonText}>티맵으로 열기</Text>
-          </Pressable>
-          <Pressable style={[styles.button, styles.naviButton]} onPress={openKakao}>
-            <Text style={styles.naviButtonText}>카카오맵으로 열기</Text>
-          </Pressable>
-        </View>
+        <Text style={styles.notice}>인증 카드를 남기려면 출발 전에 기록을 켜 두세요.</Text>
         <Pressable
-          style={[styles.button, styles.recordButton]}
-          onPress={() => router.push(`/record/${course.id}`)}
+          style={[styles.primaryButton, opening && styles.disabled]}
+          onPress={openNavi}
+          disabled={opening}
         >
-          <Text style={styles.recordButtonText}>기록 시작</Text>
+          <Text style={styles.primaryButtonText}>티맵으로 시작점까지 가기</Text>
+          <Text style={styles.primaryButtonSub}>티맵이 없으면 카카오맵으로 열립니다</Text>
+        </Pressable>
+        <Pressable
+          style={styles.textButton}
+          onPress={() => router.push(`/record/${course.id}`)}
+          hitSlop={8}
+        >
+          <Text style={styles.textButtonLabel}>기록만 시작</Text>
         </Pressable>
       </View>
     </View>
@@ -192,15 +199,18 @@ const styles = StyleSheet.create({
   meta: { fontSize: 15, color: "#555" },
   empty: { color: "#888" },
   buttons: { padding: 16, gap: 10 },
-  row: { flexDirection: "row", gap: 10 },
-  button: {
+  notice: { fontSize: 13, color: "#666", textAlign: "center" },
+  primaryButton: {
+    backgroundColor: "#111",
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: "center",
     justifyContent: "center",
+    gap: 2,
   },
-  naviButton: { flex: 1, backgroundColor: "#fff", borderWidth: 1, borderColor: "#ccc" },
-  naviButtonText: { color: "#111", fontSize: 15, fontWeight: "600" },
-  recordButton: { backgroundColor: "#111", paddingVertical: 16 },
-  recordButtonText: { color: "#fff", fontSize: 17, fontWeight: "700" },
+  primaryButtonText: { color: "#fff", fontSize: 17, fontWeight: "700" },
+  primaryButtonSub: { color: "#9ab", fontSize: 12 },
+  disabled: { opacity: 0.5 },
+  textButton: { alignItems: "center", paddingVertical: 8 },
+  textButtonLabel: { color: "#888", fontSize: 15, fontWeight: "600" },
 });
