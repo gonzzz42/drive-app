@@ -107,10 +107,10 @@ export default function CourseScreen() {
   if (start) bounds.push(start);
   if (end) bounds.push(end);
 
-  // "왕복 1시간 · 12.4 km". 시간을 셀 수 없으면 거리만.
+  // "왕복 1시간 · 12.4 km". 시간을 셀 수 없으면 거리만, 거리도 없으면 줄을 비운다.
   const roundTrip = roundTripLabel(estimateRoundTripMinutes(course, here ?? DUMMY_LOCATION));
-  const distance = distanceLabel(course.distance_km);
-  const infoText = roundTrip ? `${roundTrip} · ${distance}` : distance;
+  const distance = course.distance_km > 0 ? distanceLabel(course.distance_km) : "";
+  const infoText = roundTrip ? (distance ? `${roundTrip} · ${distance}` : roundTrip) : distance;
   const sourceLabel = course.source_name ?? (course.source_url ? "원본 글" : undefined);
 
   // 내비 앱으로 코스 시작점까지. 기록 화면으로 이동하지 않는다.

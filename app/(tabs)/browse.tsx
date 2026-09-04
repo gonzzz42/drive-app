@@ -28,9 +28,11 @@ const MAX_SHELF = 5;
 const CARD_WIDTH_RATIO = 0.78; // 다음 카드가 조금 보이게
 const THUMB = 56;
 
-// 예상 시간. 셀 수 없으면 거리.
+// 예상 시간. 셀 수 없으면 거리, 거리도 없으면 빈 문자열.
 function timeText(course: Course, here: LatLng): string {
-  return roundTripLabel(estimateRoundTripMinutes(course, here)) ?? distanceLabel(course.distance_km);
+  const roundTrip = roundTripLabel(estimateRoundTripMinutes(course, here));
+  if (roundTrip) return roundTrip;
+  return course.distance_km > 0 ? distanceLabel(course.distance_km) : "";
 }
 
 // 그림용 점: 경로선. 없으면 시작·도착 좌표만.
