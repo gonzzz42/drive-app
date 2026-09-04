@@ -41,6 +41,13 @@
       ],
       "expo-sharing",
       "expo-status-bar"
-    ]
+    ],
+    "owner": "gonzzz",
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "91e18d9c-bd40-48f1-af16-7b723c46b244"
+      }
+    }
   }
 }
