@@ -1,8 +1,10 @@
+import * as Location from "expo-location";
 import { useRouter } from "expo-router";
+import { useEffect, useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { courses, type Course } from "../src/lib/courses";
-import { isNightHour, recommendCourses } from "../src/lib/recommend";
+import { courses, type Course, type LatLng } from "../src/lib/courses";
+import { DUMMY_LOCATION, isNightHour, recommendCourses } from "../src/lib/recommend";
 
 function CourseItem({ course }: { course: Course }) {
   const router = useRouter();
@@ -40,10 +42,37 @@ export default function HomeScreen() {
   // 폰 하단 시스템 바(홈 버튼 줄)에 버튼이 가려지지 않게 여백을 준다.
   const insets = useSafeAreaInsets();
 
-  // 지금 시각 기준 추천 순서 (화면을 열 때마다 다시 계산)
+  // 내 위치. 권한 거부·실패·아직 로딩 중이면 undefined → 더미 위치(서울 강서)를 쓴다.
+  const [here, setHere] = useState<LatLng | undefined>();
+
+  useEffect(() => {
+    let alive = true;
+    async function load() {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== "granted") return;
+        // 최근 위치가 있으면 바로 쓰고(빠름), 없으면 새로 잡는다
+        const last = await Location.getLastKnownPositionAsync({ maxAge: 60_000 });
+        const pos =
+          last ??
+          (await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          }));
+        if (alive) setHere({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+      } catch {
+        // 위치를 못 잡으면 더미 위치 그대로
+      }
+    }
+    load();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // 지금 시각·위치 기준 추천 순서 (화면을 열 때마다 다시 계산)
   const now = new Date();
   const night = isNightHour(now.getHours());
-  const sorted = recommendCourses(courses, now);
+  const sorted = recommendCourses(courses, now, here ?? DUMMY_LOCATION);
 
   return (
     <View style={styles.container}>
@@ -53,7 +82,8 @@ export default function HomeScreen() {
         renderItem={({ item }) => <CourseItem course={item} />}
         ListHeaderComponent={
           <Text style={styles.hint}>
-            {night ? "밤 코스 우선" : "가까운 순"} · 서울 강서 기준
+            {night ? "밤 코스 우선" : "가까운 순"} ·{" "}
+            {here ? "내 위치 기준" : "서울 강서 기준 (위치 없음)"}
           </Text>
         }
         contentContainerStyle={styles.list}
