@@ -2,6 +2,7 @@ import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useRef, useState } from "react";
 import {
   Alert,
+  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -159,6 +160,21 @@ export default function CourseScreen() {
         {course.avoid_time ? (
           <Text style={styles.meta}>피할 시간: {course.avoid_time}</Text>
         ) : null}
+        {course.source_name ? (
+          <Text style={styles.meta}>출처: {course.source_name}</Text>
+        ) : null}
+        {course.source_url ? (
+          <Pressable
+            onPress={() =>
+              Linking.openURL(course.source_url!).catch(() =>
+                Alert.alert("링크를 열 수 없습니다"),
+              )
+            }
+            hitSlop={8}
+          >
+            <Text style={styles.link}>원본 글 보기</Text>
+          </Pressable>
+        ) : null}
       </ScrollView>
 
       <View style={[styles.buttons, { paddingBottom: 16 + insets.bottom }]}>
@@ -197,6 +213,7 @@ const styles = StyleSheet.create({
   infoContent: { padding: 16, gap: 6 },
   name: { fontSize: 22, fontWeight: "700", color: "#111" },
   meta: { fontSize: 15, color: "#555" },
+  link: { fontSize: 15, color: "#0a66c2", fontWeight: "600", marginTop: 4 },
   empty: { color: "#888" },
   buttons: { padding: 16, gap: 10 },
   notice: { fontSize: 13, color: "#666", textAlign: "center" },
