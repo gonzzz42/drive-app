@@ -1,12 +1,15 @@
+import * as Location from "expo-location";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Alert,
   Linking,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from "react-native";
 import MapView, {
@@ -16,43 +19,38 @@ import MapView, {
   type Region,
 } from "react-native-maps";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { getCourse, type Course } from "../../src/lib/courses";
-import { naviUrls, openFirst } from "../../src/lib/navi";
+import { getCourse, type Course, type LatLng } from "../../src/lib/courses";
+import { distanceLabel, roundTripLabel } from "../../src/lib/format";
+import { naviUrls, openFirst, startTarget } from "../../src/lib/navi";
+import { DUMMY_LOCATION, estimateRoundTripMinutes } from "../../src/lib/recommend";
+import { RouteSketch, STATIC_ROUTE_ONLY } from "../../src/ui/RouteSketch";
+import { buttons, colors, lightMapStyle, space } from "../../src/ui/theme";
 
-// 기본 좌표: 서울 시청
-const SEOUL: Region = {
-  latitude: 37.5665,
-  longitude: 126.978,
-  latitudeDelta: 0.2,
-  longitudeDelta: 0.2,
-};
+// 코스 상세: 투명 헤더(뒤로만) → 지도(경로선이 있을 때만) → 코스명·시간·구간·출처 → 길찾기 / 경로 남기기.
+// Android Expo Go에서는 지도 대신 정적 경로 그림.
 
+const MAP_HEIGHT_RATIO = 0.47; // 화면 높이의 45~50%
 const MAP_PADDING = { top: 40, right: 40, bottom: 40, left: 40 };
+const HEADER_HEIGHT = 44; // 투명 헤더 아래로 글이 들어가지 않게
 
-// 위도/경도 두 개가 다 있을 때만 지도 좌표로 바꾼다.
-function toLatLng(lat?: number, lng?: number): MapLatLng | undefined {
-  if (lat == null || lng == null) return undefined;
-  return { latitude: lat, longitude: lng };
+function toMap(p: LatLng): MapLatLng {
+  return { latitude: p.lat, longitude: p.lng };
 }
 
-// 지도에 그릴 경로 좌표. polyline이 비어 있으면 시작/끝 좌표로 대체.
-function coursePoints(course: Course): MapLatLng[] {
-  if (course.polyline.length > 0) {
-    return course.polyline.map((p) => ({ latitude: p.lat, longitude: p.lng }));
-  }
-  const pts: MapLatLng[] = [];
-  const start = toLatLng(course.start_lat, course.start_lng);
-  const end = toLatLng(course.end_lat, course.end_lng);
-  if (start) pts.push(start);
-  if (end) pts.push(end);
-  return pts;
+// 시작·도착 좌표. 코스에 없으면 경로선의 첫·마지막 점.
+function startOf(c: Course): LatLng | undefined {
+  if (c.start_lat != null && c.start_lng != null) return { lat: c.start_lat, lng: c.start_lng };
+  return c.polyline[0];
+}
+function endOf(c: Course): LatLng | undefined {
+  if (c.end_lat != null && c.end_lng != null) return { lat: c.end_lat, lng: c.end_lng };
+  return c.polyline.length > 1 ? c.polyline[c.polyline.length - 1] : undefined;
 }
 
-// 좌표 목록을 모두 담는 지도 영역. fitToCoordinates 전에 쓸 첫 화면용.
-function regionFor(points: MapLatLng[]): Region {
-  if (points.length === 0) return SEOUL;
-  const lats = points.map((p) => p.latitude);
-  const lngs = points.map((p) => p.longitude);
+// 좌표 목록을 모두 담는 지도 영역 (fitToCoordinates 전 첫 화면용)
+function regionFor(points: LatLng[]): Region {
+  const lats = points.map((p) => p.lat);
+  const lngs = points.map((p) => p.lng);
   const minLat = Math.min(...lats);
   const maxLat = Math.max(...lats);
   const minLng = Math.min(...lngs);
@@ -69,55 +67,72 @@ export default function CourseScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
   const mapRef = useRef<MapView>(null);
   const [opening, setOpening] = useState(false);
+  // 예상 시간 계산용 내 위치. 권한을 새로 묻지 않고 마지막 위치만 쓴다. 없으면 더미 위치.
+  const [here, setHere] = useState<LatLng | undefined>();
   const course = getCourse(id);
+
+  useEffect(() => {
+    let alive = true;
+    Location.getLastKnownPositionAsync({ maxAge: 300_000 })
+      .then((pos) => {
+        if (alive && pos) setHere({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+      })
+      .catch(() => {
+        // 위치를 못 잡으면 더미 위치 그대로
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   if (!course) {
     return (
       <View style={styles.center}>
+        <Stack.Screen options={{ headerTransparent: true, title: "" }} />
         <Text style={styles.empty}>코스를 찾을 수 없습니다.</Text>
       </View>
     );
   }
 
-  const points = coursePoints(course);
-  // 시작/끝 마커: 코스의 시작·끝 좌표. 없으면 경로의 첫/마지막 점.
-  const start =
-    toLatLng(course.start_lat, course.start_lng) ??
-    (points.length > 0 ? points[0] : undefined);
-  const end =
-    toLatLng(course.end_lat, course.end_lng) ??
-    (points.length > 1 ? points[points.length - 1] : undefined);
-  const distance =
-    course.distance_km > 0 ? `${course.distance_km} km` : "거리 미정";
+  const line = course.polyline;
+  const hasMap = line.length > 0;
+  const mapHeight = Math.round(height * MAP_HEIGHT_RATIO);
+  const start = startOf(course);
+  const end = endOf(course);
+  // 지도에 담을 점: 경로선 + 시작 + 도착 (내 위치는 넣지 않는다)
+  const bounds: LatLng[] = [...line];
+  if (start) bounds.push(start);
+  if (end) bounds.push(end);
 
-  // 내비 목적지는 코스 "시작점". 좌표가 있으면 좌표, 없으면 시작점 이름으로 검색.
-  const target = {
-    name: course.start_name,
-    lat: course.start_lat,
-    lng: course.start_lng,
-    keyword: course.start_name,
-  };
+  // "왕복 1시간 · 12.4 km". 시간을 셀 수 없으면 거리만.
+  const roundTrip = roundTripLabel(estimateRoundTripMinutes(course, here ?? DUMMY_LOCATION));
+  const distance = distanceLabel(course.distance_km);
+  const infoText = roundTrip ? `${roundTrip} · ${distance}` : distance;
+  const sourceLabel = course.source_name ?? (course.source_url ? "원본 글" : undefined);
 
-  // 티맵을 먼저, 없으면 카카오맵. 기록 화면으로 자동 이동하지 않는다.
+  // 내비 앱으로 코스 시작점까지. 기록 화면으로 이동하지 않는다.
   async function openNavi() {
-    if (opening) return;
+    if (!course || opening) return;
     setOpening(true);
     try {
-      const ok = await openFirst(naviUrls(target));
-      if (!ok) {
-        // 티맵 → 카카오맵 → 카카오 웹 순서로 모두 실패한 경우 (브라우저까지 없을 때)
-        Alert.alert("내비를 열 수 없습니다", "티맵, 카카오맵, 브라우저를 모두 열지 못했습니다.");
-      }
+      const ok = await openFirst(naviUrls(startTarget(course)));
+      if (!ok) Alert.alert("길찾기를 열 수 없습니다", "설치된 내비 앱이 없습니다.");
     } finally {
       setOpening(false);
     }
   }
 
+  function openSource() {
+    if (!course?.source_url) return;
+    Linking.openURL(course.source_url).catch(() => Alert.alert("링크를 열 수 없습니다"));
+  }
+
   function fitMap() {
-    if (points.length > 1) {
-      mapRef.current?.fitToCoordinates(points, {
+    if (bounds.length > 1) {
+      mapRef.current?.fitToCoordinates(bounds.map(toMap), {
         edgePadding: MAP_PADDING,
         animated: false,
       });
@@ -126,73 +141,91 @@ export default function CourseScreen() {
 
   return (
     <View style={styles.container}>
-      <Stack.Screen options={{ title: course.name }} />
+      <Stack.Screen
+        options={{
+          headerTransparent: true,
+          title: "",
+          headerTintColor: colors.ink,
+          headerBackButtonDisplayMode: "minimal",
+        }}
+      />
 
-      <MapView
-        ref={mapRef}
-        style={styles.map}
-        initialRegion={regionFor(points)}
-        onMapReady={fitMap}
-      >
-        {points.length > 1 ? (
-          <Polyline coordinates={points} strokeWidth={4} strokeColor="#0a66c2" />
-        ) : null}
-        {start ? <Marker coordinate={start} title={course.start_name} /> : null}
-        {end ? (
-          <Marker coordinate={end} title={course.end_name} pinColor="#0a66c2" />
-        ) : null}
-      </MapView>
-      {points.length === 0 ? (
-        <Text style={styles.noRoute}>경로 좌표가 아직 없는 코스입니다.</Text>
+      {hasMap ? (
+        <View style={{ height: mapHeight }}>
+          {STATIC_ROUTE_ONLY ? (
+            <RouteSketch points={line} width={width} height={mapHeight} stroke={4} />
+          ) : (
+            <MapView
+              ref={mapRef}
+              style={StyleSheet.absoluteFill}
+              initialRegion={regionFor(bounds)}
+              userInterfaceStyle="light"
+              customMapStyle={Platform.OS === "android" ? lightMapStyle : undefined}
+              showsPointsOfInterests={false}
+              showsCompass={false}
+              toolbarEnabled={false}
+              onMapReady={fitMap}
+            >
+              {line.length > 1 ? (
+                <Polyline
+                  coordinates={line.map(toMap)}
+                  strokeColor={colors.accent}
+                  strokeWidth={5}
+                  lineCap="round"
+                  lineJoin="round"
+                  lineDashPattern={line.length < 4 ? [1, 10] : undefined}
+                />
+              ) : null}
+              {start ? (
+                <Marker
+                  coordinate={toMap(start)}
+                  anchor={{ x: 0.5, y: 0.5 }}
+                  tracksViewChanges={false}
+                >
+                  <View style={styles.startDot} />
+                </Marker>
+              ) : null}
+              {end ? <Marker coordinate={toMap(end)} pinColor={colors.pinEnd} /> : null}
+            </MapView>
+          )}
+        </View>
       ) : null}
 
-      <ScrollView style={styles.info} contentContainerStyle={styles.infoContent}>
+      <ScrollView
+        style={styles.info}
+        contentContainerStyle={[
+          styles.infoContent,
+          !hasMap && { paddingTop: insets.top + HEADER_HEIGHT + space.screen },
+        ]}
+      >
         <Text style={styles.name}>{course.name}</Text>
-        <Text style={styles.meta}>
-          {course.region} · {distance}
-        </Text>
-        <Text style={styles.meta}>
+        <Text style={styles.time}>{infoText}</Text>
+        <Text style={styles.route}>
           {course.start_name} → {course.end_name}
         </Text>
-        {course.best_time ? (
-          <Text style={styles.meta}>추천 시간: {course.best_time}</Text>
-        ) : null}
-        {course.avoid_time ? (
-          <Text style={styles.meta}>피할 시간: {course.avoid_time}</Text>
-        ) : null}
-        {course.source_name ? (
-          <Text style={styles.meta}>출처: {course.source_name}</Text>
-        ) : null}
-        {course.source_url ? (
-          <Pressable
-            onPress={() =>
-              Linking.openURL(course.source_url!).catch(() =>
-                Alert.alert("링크를 열 수 없습니다"),
-              )
-            }
-            hitSlop={8}
-          >
-            <Text style={styles.link}>원본 글 보기</Text>
+        {sourceLabel ? (
+          <Pressable onPress={openSource} disabled={!course.source_url} hitSlop={8}>
+            <Text style={styles.source} numberOfLines={1}>
+              출처 · {sourceLabel}
+            </Text>
           </Pressable>
         ) : null}
       </ScrollView>
 
-      <View style={[styles.buttons, { paddingBottom: 16 + insets.bottom }]}>
-        <Text style={styles.notice}>인증 카드를 남기려면 출발 전에 기록을 켜 두세요.</Text>
+      <View style={[styles.bottom, { paddingBottom: insets.bottom + space.gap }]}>
         <Pressable
-          style={[styles.primaryButton, opening && styles.disabled]}
+          style={({ pressed }) => [
+            buttons.primary,
+            pressed && buttons.primaryPressed,
+            opening && buttons.primaryDisabled,
+          ]}
           onPress={openNavi}
           disabled={opening}
         >
-          <Text style={styles.primaryButtonText}>티맵으로 시작점까지 가기</Text>
-          <Text style={styles.primaryButtonSub}>티맵이 없으면 카카오맵으로 열립니다</Text>
+          <Text style={buttons.primaryText}>길찾기</Text>
         </Pressable>
-        <Pressable
-          style={styles.textButton}
-          onPress={() => router.push(`/record/${course.id}`)}
-          hitSlop={8}
-        >
-          <Text style={styles.textButtonLabel}>기록만 시작</Text>
+        <Pressable style={buttons.secondary} onPress={() => router.push(`/record/${course.id}`)}>
+          <Text style={buttons.secondaryText}>경로 남기기</Text>
         </Pressable>
       </View>
     </View>
@@ -200,34 +233,23 @@ export default function CourseScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f5f5f7" },
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  map: { height: 260, width: "100%" },
-  noRoute: {
-    fontSize: 12,
-    color: "#999",
-    textAlign: "center",
-    paddingVertical: 6,
-  },
+  container: { flex: 1, backgroundColor: colors.bg },
+  center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.bg },
+  empty: { fontSize: 15, color: colors.text2 },
   info: { flex: 1 },
-  infoContent: { padding: 16, gap: 6 },
-  name: { fontSize: 22, fontWeight: "700", color: "#111" },
-  meta: { fontSize: 15, color: "#555" },
-  link: { fontSize: 15, color: "#0a66c2", fontWeight: "600", marginTop: 4 },
-  empty: { color: "#888" },
-  buttons: { padding: 16, gap: 10 },
-  notice: { fontSize: 13, color: "#666", textAlign: "center" },
-  primaryButton: {
-    backgroundColor: "#111",
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 2,
+  infoContent: { padding: space.screen, gap: 8 },
+  name: { fontSize: 26, fontWeight: "700", color: colors.ink },
+  time: { fontSize: 16, fontWeight: "600", color: colors.ink },
+  route: { fontSize: 15, color: colors.text2 },
+  source: { fontSize: 13, color: colors.text2, marginTop: 4 },
+  bottom: { paddingHorizontal: space.screen, paddingTop: space.gap, gap: 8 },
+  // 시작 마커: 파란 원 12, 흰 테두리 2.5
+  startDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: colors.accent,
+    borderWidth: 2.5,
+    borderColor: "#FFFFFF",
   },
-  primaryButtonText: { color: "#fff", fontSize: 17, fontWeight: "700" },
-  primaryButtonSub: { color: "#9ab", fontSize: 12 },
-  disabled: { opacity: 0.5 },
-  textButton: { alignItems: "center", paddingVertical: 8 },
-  textButtonLabel: { color: "#888", fontSize: 15, fontWeight: "600" },
 });
