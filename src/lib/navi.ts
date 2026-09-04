@@ -1,4 +1,5 @@
 import { Linking } from "react-native";
+import type { Course } from "./courses";
 
 // 외부 내비 앱(티맵, 카카오맵)을 URL 스킴으로 여는 헬퍼.
 // 네이티브 SDK는 쓰지 않는다.
@@ -20,6 +21,16 @@ export type NaviTarget = {
   lng?: number; // 목적지 경도
   keyword: string; // 좌표가 없을 때 쓸 검색어
 };
+
+// 코스 시작점을 내비 목적지로. 좌표가 있으면 좌표, 없으면 시작점 이름으로 검색.
+export function startTarget(course: Course): NaviTarget {
+  return {
+    name: course.start_name,
+    lat: course.start_lat,
+    lng: course.start_lng,
+    keyword: course.start_name,
+  };
+}
 
 function hasCoords(t: NaviTarget): t is NaviTarget & { lat: number; lng: number } {
   return typeof t.lat === "number" && typeof t.lng === "number";

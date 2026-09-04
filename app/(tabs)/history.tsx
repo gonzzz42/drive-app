@@ -1,10 +1,11 @@
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { courses, type Course } from "../src/lib/courses";
-import { judgeCompletion } from "../src/lib/geo";
-import { listLocalTrips, type Trip } from "../src/lib/trips";
+import { courses, type Course } from "../../src/lib/courses";
+import { judgeCompletion } from "../../src/lib/geo";
+import { listLocalTrips, type Trip } from "../../src/lib/trips";
+
+// 히스토리 탭. C14에서는 예전 도감 내용을 그대로 옮겨 두었다. C17에서 시간순 기록으로 바꾼다.
 
 type Status = "완주" | "부분 주행" | "미주행";
 
@@ -41,7 +42,7 @@ const STATUS_STYLE: Record<Status, { bg: string; fg: string }> = {
   미주행: { bg: "#ddd", fg: "#666" },
 };
 
-function AlbumItem({ entry }: { entry: Entry }) {
+function HistoryItem({ entry }: { entry: Entry }) {
   const router = useRouter();
   const color = STATUS_STYLE[entry.status];
   const canOpen = entry.latest != null;
@@ -72,13 +73,11 @@ function AlbumItem({ entry }: { entry: Entry }) {
   );
 }
 
-export default function AlbumScreen() {
-  // 폰 하단 시스템 바(홈 버튼 줄)에 내용이 가려지지 않게 여백을 준다.
-  const insets = useSafeAreaInsets();
+export default function HistoryScreen() {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loaded, setLoaded] = useState(false);
 
-  // 화면이 보일 때마다 다시 읽는다 (결과 화면에서 돌아와도 최신 상태)
+  // 탭이 보일 때마다 다시 읽는다 (결과 화면에서 돌아와도 최신 상태)
   useFocusEffect(
     useCallback(() => {
       let alive = true;
@@ -100,13 +99,13 @@ export default function AlbumScreen() {
       <FlatList
         data={entries}
         keyExtractor={(item) => item.course.id}
-        renderItem={({ item }) => <AlbumItem entry={item} />}
+        renderItem={({ item }) => <HistoryItem entry={item} />}
         ListHeaderComponent={
           <Text style={styles.hint}>
             {loaded ? `완주 ${doneCount} / 전체 ${entries.length}` : "불러오는 중..."}
           </Text>
         }
-        contentContainerStyle={[styles.list, { paddingBottom: 16 + insets.bottom }]}
+        contentContainerStyle={styles.list}
       />
     </View>
   );

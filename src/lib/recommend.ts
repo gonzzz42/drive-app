@@ -72,6 +72,17 @@ export function homeCourses(
   return [...near, ...far];
 }
 
+// 오늘 길 1개: homeCourses 순서의 첫 코스.
+// (시작 좌표·거리 있음 → 밤이면 '밤' 태그 우선 → 가까운 순 → 왕복 90분 이하 우선)
+// 조건에 맞는 코스가 없으면 undefined.
+export function pickTodayCourse(
+  courses: Course[],
+  now: Date,
+  here: LatLng = DUMMY_LOCATION,
+): Course | undefined {
+  return homeCourses(courses, now, here)[0];
+}
+
 // 큰 카드의 한 줄 이유. best_time / avoid_time 을 짧게 보여주고, "지금 추천"이라고 단정하지 않는다.
 export function reasonFor(course: Course): string {
   if (course.best_time) return `좋은 때: ${course.best_time}`;
