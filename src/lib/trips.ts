@@ -45,6 +45,35 @@ export async function loadTrip(id: string | undefined): Promise<Trip | undefined
   }
 }
 
+// 폰에 저장된 기록을 전부 읽는다. 최근 것이 앞.
+// 파일 하나가 깨져 있어도 나머지는 살린다. 절대 던지지 않는다.
+export async function listLocalTrips(): Promise<Trip[]> {
+  const dir = tripsDir();
+  if (!dir.exists) return [];
+
+  let entries: (File | Directory)[] = [];
+  try {
+    entries = dir.list();
+  } catch {
+    return [];
+  }
+
+  const trips: Trip[] = [];
+  for (const entry of entries) {
+    if (!(entry instanceof File) || !entry.name.endsWith(".json")) continue;
+    try {
+      const trip = JSON.parse(await entry.text()) as Trip;
+      if (typeof trip.id === "string" && Array.isArray(trip.points)) {
+        trips.push(trip);
+      }
+    } catch {
+      // 이 파일만 건너뛴다
+    }
+  }
+  trips.sort((a, b) => b.startedAt - a.startedAt);
+  return trips;
+}
+
 // 19시부터 새벽 6시 전까지는 밤
 export function isNight(epochMs: number): boolean {
   const hour = new Date(epochMs).getHours();
