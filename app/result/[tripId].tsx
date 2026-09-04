@@ -1,80 +1,75 @@
 // SDK 57의 기본 expo-media-library는 새 API(Next)라 Expo Go에 네이티브 모듈이 없다.
 // 사진첩 저장만 필요하므로 예전 API(legacy)를 쓴다.
 import * as MediaLibrary from "expo-media-library/legacy";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import * as Sharing from "expo-sharing";
 import { useEffect, useRef, useState } from "react";
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { captureRef } from "react-native-view-shot";
-import { getCourse } from "../../src/lib/courses";
+import { getCourse, type LatLng } from "../../src/lib/courses";
+import { dateLabel, distanceLabel, durationLabel } from "../../src/lib/format";
 import { judgeCompletion, pathLengthMeters } from "../../src/lib/geo";
 import { supabase } from "../../src/lib/supabase";
-import {
-  isNight,
-  loadTrip,
-  saveCoursePolylineFile,
-  saveTrip,
-  uploadTrip,
-  type Trip,
-} from "../../src/lib/trips";
+import { isNight, loadTrip, saveTrip, uploadTrip, type Trip } from "../../src/lib/trips";
+import { RouteSketch } from "../../src/ui/RouteSketch";
+import { buttons, colors, hairline, radius, space } from "../../src/ui/theme";
 
-// 코스 선이 이 개수보다 적으면 "기록을 코스 선으로 저장" 버튼을 보여준다
-const SPARSE_POLYLINE = 10;
+// 결과 화면: 캡처용 카드(밤/낮 → 경로 그림 → 코스명 → 거리·시간 → 날짜·완주) + 저장/공유 + 홈으로.
+// 서버 업로드는 조용히 한 번 시도하고 화면에 표시하지 않는다.
 
-function formatDate(epochMs: number): string {
-  const d = new Date(epochMs);
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}.${mm}.${dd}`;
-}
-
-type SyncState = "none" | "uploading" | "done" | "failed";
+const CARD_RADIUS = 20;
+const CARD_PADDING = 24;
 
 export default function ResultScreen() {
   const { tripId } = useLocalSearchParams<{ tripId: string }>();
   const router = useRouter();
-  // 폰 하단 시스템 바(홈 버튼 줄)에 버튼이 가려지지 않게 여백을 준다.
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   // 이미지로 캡처할 카드 View
   const cardRef = useRef<View>(null);
 
   const [trip, setTrip] = useState<Trip | undefined>();
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [sync, setSync] = useState<SyncState>("none");
-  const [syncError, setSyncError] = useState("");
 
   useEffect(() => {
     loadTrip(tripId).then((t) => {
       setTrip(t);
       setLoaded(true);
-      if (t?.serverId) setSync("done");
     });
   }, [tripId]);
 
   const course = getCourse(trip?.courseId);
-  const minutes = trip ? Math.round((trip.endedAt - trip.startedAt) / 60000) : 0;
-  const km = trip ? (pathLengthMeters(trip.points) / 1000).toFixed(1) : "0.0";
   // 완주 판정: 코스 polyline과 주행 궤적 비교
-  const result =
-    trip && course ? judgeCompletion(course.polyline, trip.points) : undefined;
-  const overlapPercent = result ? Math.round(result.overlap * 100) : 0;
+  const result = trip && course ? judgeCompletion(course.polyline, trip.points) : undefined;
+  // 카드 그림: 기록 좌표. 없으면 코스 경로선.
+  const points: LatLng[] = trip && trip.points.length > 0 ? trip.points : (course?.polyline ?? []);
 
-  // 서버(Supabase)에 올린다. 아직 안 올라간 기록만. 실패해도 앱은 계속 동작.
+  // 카드 비율 4:5. 화면 좌우 여백 20.
+  const cardWidth = width - space.screen * 2;
+  const cardHeight = Math.round(cardWidth * 1.25);
+  const sketchWidth = cardWidth - CARD_PADDING * 2;
+  const sketchHeight = Math.round(cardHeight * 0.5);
+
+  // 서버(Supabase)에 올린다. 아직 안 올라간 기록에 한해 시도하고, 실패해도 조용히 넘어간다.
   async function syncToServer(t: Trip) {
     if (!supabase || t.serverId) return;
-    setSync("uploading");
-    setSyncError("");
     try {
       const serverId = await uploadTrip(t, getCourse(t.courseId));
       const updated = { ...t, serverId };
       await saveTrip(updated);
       setTrip(updated);
-      setSync("done");
-    } catch (e) {
-      setSync("failed");
-      setSyncError(e instanceof Error ? e.message : String(e));
+    } catch {
+      // 다음에 결과 화면을 열면 다시 시도한다
     }
   }
 
@@ -133,166 +128,108 @@ export default function ResultScreen() {
     }
   }
 
-  // 코스 선이 점 몇 개뿐이면 이 기록의 좌표를 코스 선 파일로 내보낼 수 있게 한다
-  const canExportPolyline =
-    !!trip && !!course && course.polyline.length < SPARSE_POLYLINE && trip.points.length >= 2;
-
-  async function exportPolyline() {
-    if (!trip || !course || busy) return;
-    setBusy(true);
-    try {
-      const uri = await saveCoursePolylineFile(course.id, trip.points);
-      const fileName = `course-${course.id}-polyline.json`;
-      Alert.alert(
-        "코스 선 파일 저장됨",
-        `${fileName}\n(${trip.points.length}개 점)\n\n"공유"로 이 파일을 컴퓨터로 보낸 뒤, 파일 내용을 data/courses.json 의 이 코스 "polyline" 값에 붙여넣으세요.`,
-        [
-          { text: "닫기", style: "cancel" },
-          {
-            text: "공유",
-            onPress: () => {
-              Sharing.shareAsync(uri, {
-                mimeType: "application/json",
-                dialogTitle: fileName,
-              }).catch(() => Alert.alert("공유 실패", "공유 창을 열지 못했습니다."));
-            },
-          },
-        ],
-      );
-    } catch {
-      Alert.alert("저장 실패", "코스 선 파일을 저장하지 못했습니다.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const syncText = !supabase
-    ? "서버 미설정 (.env 없음) · 폰에만 저장됨"
-    : sync === "uploading"
-      ? "서버에 저장 중..."
-      : sync === "done"
-        ? "서버에 저장됨"
-        : sync === "failed"
-          ? `서버 저장 실패: ${syncError}`
-          : "";
-
   return (
-    <View style={[styles.container, { paddingBottom: 16 + insets.bottom }]}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + space.gap }]}
+    >
+      <Stack.Screen
+        options={{
+          headerStyle: { backgroundColor: colors.bg },
+          headerShadowVisible: false,
+          headerTintColor: colors.ink,
+        }}
+      />
+
       {!loaded ? (
-        <Text style={styles.meta}>불러오는 중...</Text>
+        <Text style={styles.meta}>불러오는 중…</Text>
       ) : !trip ? (
         <Text style={styles.meta}>기록을 찾을 수 없습니다.</Text>
       ) : (
         <>
           {/* collapsable={false}: Android에서 캡처하려면 실제 View로 남아 있어야 한다 */}
-          <View ref={cardRef} collapsable={false} style={styles.card}>
+          <View
+            ref={cardRef}
+            collapsable={false}
+            style={[styles.card, { width: cardWidth, height: cardHeight }]}
+          >
             <Text style={styles.cardLabel}>
               {isNight(trip.startedAt) ? "밤 드라이브" : "낮 드라이브"}
             </Text>
-            <Text style={styles.cardTitle}>{course?.name ?? "알 수 없는 코스"}</Text>
-            <View style={styles.cardRow}>
-              <View style={styles.cardStat}>
-                <Text style={styles.cardNumber}>{km}</Text>
-                <Text style={styles.cardUnit}>km</Text>
-              </View>
-              <View style={styles.cardStat}>
-                <Text style={styles.cardNumber}>{minutes}</Text>
-                <Text style={styles.cardUnit}>분</Text>
-              </View>
+            <RouteSketch points={points} width={sketchWidth} height={sketchHeight} stroke={4} />
+            <Text style={styles.cardTitle} numberOfLines={2}>
+              {course?.name ?? "알 수 없는 코스"}
+            </Text>
+            <Text style={styles.cardStat}>
+              {distanceLabel(pathLengthMeters(trip.points) / 1000)} ·{" "}
+              {durationLabel(trip.endedAt - trip.startedAt)}
+            </Text>
+            <View style={styles.cardFoot}>
+              <Text style={styles.cardDate}>{dateLabel(trip.startedAt, "dotted")}</Text>
+              {result ? (
+                <Text style={styles.cardDate}>{result.completed ? "완주" : "미완주"}</Text>
+              ) : null}
             </View>
-            <Text style={result?.completed ? styles.cardDone : styles.cardNotDone}>
-              {result?.completed ? "완주" : "미완주"}
-            </Text>
-            <Text style={styles.cardDate}>{formatDate(trip.startedAt)}</Text>
-          </View>
-
-          {result ? (
-            <Text style={styles.detail}>
-              코스 겹침 {overlapPercent}% · 기록한 위치 {trip.points.length}개
-              {result.startOk ? "" : " · 시작점 벗어남"}
-              {result.endOk ? "" : " · 끝점 벗어남"}
-            </Text>
-          ) : null}
-
-          <View style={styles.syncRow}>
-            <Text style={sync === "failed" ? styles.syncFailed : styles.detail}>
-              {syncText}
-            </Text>
-            {sync === "failed" ? (
-              <Pressable onPress={() => syncToServer(trip)}>
-                <Text style={styles.retry}>다시 시도</Text>
-              </Pressable>
-            ) : null}
           </View>
 
           <View style={styles.row}>
             <Pressable
-              style={[styles.button, styles.subButton, busy && styles.disabled]}
+              style={[styles.smallButton, styles.saveButton, busy && buttons.primaryDisabled]}
               onPress={saveImage}
               disabled={busy}
             >
-              <Text style={styles.subButtonText}>이미지 저장</Text>
+              <Text style={styles.saveText}>저장</Text>
             </Pressable>
             <Pressable
-              style={[styles.button, styles.subButton, busy && styles.disabled]}
+              style={({ pressed }) => [
+                styles.smallButton,
+                styles.shareButton,
+                pressed && buttons.primaryPressed,
+                busy && buttons.primaryDisabled,
+              ]}
               onPress={shareImage}
               disabled={busy}
             >
-              <Text style={styles.subButtonText}>공유</Text>
+              <Text style={buttons.primaryText}>공유</Text>
             </Pressable>
           </View>
-
-          {canExportPolyline ? (
-            <Pressable
-              style={[styles.button, styles.subButton, busy && styles.disabled]}
-              onPress={exportPolyline}
-              disabled={busy}
-            >
-              <Text style={styles.subButtonText}>이 기록을 코스 선으로 저장</Text>
-            </Pressable>
-          ) : null}
         </>
       )}
 
-      <Pressable style={[styles.button, styles.homeButton]} onPress={() => router.replace("/")}>
-        <Text style={styles.homeButtonText}>홈으로</Text>
+      <Pressable style={[buttons.secondary, styles.home]} onPress={() => router.replace("/")}>
+        <Text style={buttons.secondaryText}>홈으로</Text>
       </Pressable>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, gap: 12, backgroundColor: "#f5f5f7" },
-  meta: { fontSize: 15, color: "#555" },
+  container: { flex: 1, backgroundColor: colors.bg },
+  content: { flexGrow: 1, padding: space.screen, gap: space.gap },
+  meta: { fontSize: 15, color: colors.text2 },
   card: {
-    backgroundColor: "#111",
-    borderRadius: 20,
-    padding: 24,
-    gap: 6,
+    backgroundColor: colors.bg,
+    borderRadius: CARD_RADIUS,
+    borderWidth: hairline,
+    borderColor: colors.line,
+    padding: CARD_PADDING,
+    gap: space.gap,
   },
-  cardLabel: { color: "#9ab", fontSize: 14, fontWeight: "600" },
-  cardTitle: { color: "#fff", fontSize: 24, fontWeight: "700", marginBottom: 12 },
-  cardRow: { flexDirection: "row", gap: 32 },
-  cardStat: { flexDirection: "row", alignItems: "flex-end", gap: 4 },
-  cardNumber: { color: "#fff", fontSize: 44, fontWeight: "700" },
-  cardUnit: { color: "#9ab", fontSize: 16, marginBottom: 8 },
-  cardDone: { color: "#4cd964", fontSize: 20, fontWeight: "700", marginTop: 8 },
-  cardNotDone: { color: "#ff6b6b", fontSize: 20, fontWeight: "700", marginTop: 8 },
-  cardDate: { color: "#9ab", fontSize: 13, marginTop: 8 },
-  detail: { fontSize: 13, color: "#777" },
-  syncRow: { flexDirection: "row", alignItems: "center", gap: 12, flexWrap: "wrap" },
-  syncFailed: { fontSize: 13, color: "#c0392b", flexShrink: 1 },
-  retry: { fontSize: 13, color: "#0a66c2", fontWeight: "600" },
-  row: { flexDirection: "row", gap: 10 },
-  button: {
-    borderRadius: 12,
-    paddingVertical: 14,
+  cardLabel: { fontSize: 14, color: colors.text2 },
+  cardTitle: { fontSize: 28, fontWeight: "700", color: colors.ink },
+  cardStat: { fontSize: 20, fontWeight: "600", color: colors.ink },
+  cardFoot: { flexDirection: "row", gap: space.gap, marginTop: "auto" },
+  cardDate: { fontSize: 14, color: colors.text2 },
+  row: { flexDirection: "row", gap: space.gap },
+  smallButton: {
+    flex: 1,
+    height: 48,
+    borderRadius: radius.button,
     alignItems: "center",
     justifyContent: "center",
   },
-  subButton: { flex: 1, backgroundColor: "#fff", borderWidth: 1, borderColor: "#ccc" },
-  subButtonText: { color: "#111", fontSize: 15, fontWeight: "600" },
-  disabled: { opacity: 0.5 },
-  homeButton: { marginTop: "auto", backgroundColor: "#111", paddingVertical: 16 },
-  homeButtonText: { color: "#fff", fontSize: 17, fontWeight: "700" },
+  saveButton: { borderWidth: hairline, borderColor: colors.line },
+  saveText: { color: colors.ink, fontSize: 17, fontWeight: "600" },
+  shareButton: { backgroundColor: colors.accent },
+  home: { marginTop: "auto" },
 });
