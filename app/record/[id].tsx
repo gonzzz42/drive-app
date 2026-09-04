@@ -1,10 +1,13 @@
 import * as Location from "expo-location";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getCourse } from "../../src/lib/courses";
 import { saveTrip, type TripPoint } from "../../src/lib/trips";
+import { buttons, colors, space } from "../../src/ui/theme";
+
+// 기록 화면: 코스명 → 기록 중 · 경과 시간 → 종료. 포그라운드에서만 좌표를 쌓는다.
 
 // 좌표를 저장하는 간격
 const SAVE_INTERVAL_MS = 3000;
@@ -19,7 +22,6 @@ function formatElapsed(ms: number): string {
 export default function RecordScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  // 폰 하단 시스템 바(홈 버튼 줄)에 버튼이 가려지지 않게 여백을 준다.
   const insets = useSafeAreaInsets();
   const course = getCourse(id);
 
@@ -29,7 +31,6 @@ export default function RecordScreen() {
   const lastSavedAt = useRef(0);
 
   const [elapsedMs, setElapsedMs] = useState(0);
-  const [pointCount, setPointCount] = useState(0);
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -69,7 +70,6 @@ export default function RecordScreen() {
             lng: loc.coords.longitude,
             t: now,
           });
-          setPointCount(points.current.length);
         },
       );
       if (cancelled) subscription.remove();
@@ -103,53 +103,53 @@ export default function RecordScreen() {
   }
 
   return (
-    <View style={[styles.container, { paddingBottom: 16 + insets.bottom }]}>
-      <Text style={styles.name}>{course?.name ?? "알 수 없는 코스"}</Text>
+    <View style={[styles.container, { paddingBottom: insets.bottom + space.gap }]}>
+      <Stack.Screen
+        options={{
+          headerStyle: { backgroundColor: colors.bg },
+          headerShadowVisible: false,
+          headerTintColor: colors.ink,
+        }}
+      />
+      <Text style={styles.name} numberOfLines={1}>
+        {course?.name ?? "알 수 없는 코스"}
+      </Text>
 
-      <View style={styles.stats}>
-        <Text style={styles.label}>경과 시간</Text>
+      <View style={styles.center}>
+        <Text style={styles.label}>기록 중</Text>
         <Text style={styles.elapsed}>{formatElapsed(elapsedMs)}</Text>
-        <Text style={styles.label}>기록한 위치</Text>
-        <Text style={styles.count}>{pointCount}개</Text>
+        {permissionDenied ? (
+          <Text style={styles.warn}>
+            위치 권한이 없어 기록할 수 없습니다. 설정에서 위치 권한을 허용해 주세요.
+          </Text>
+        ) : null}
       </View>
 
-      {permissionDenied ? (
-        <Text style={styles.warn}>
-          위치 권한이 없어 기록할 수 없습니다. 설정에서 위치 권한을 허용해 주세요.
-        </Text>
-      ) : null}
-
       <Pressable
-        style={[styles.button, saving && styles.buttonDisabled]}
+        style={({ pressed }) => [
+          buttons.primary,
+          pressed && buttons.primaryPressed,
+          saving && buttons.primaryDisabled,
+        ]}
         onPress={finish}
         disabled={saving}
       >
-        <Text style={styles.buttonText}>{saving ? "저장 중..." : "종료"}</Text>
+        <Text style={buttons.primaryText}>{saving ? "저장 중…" : "종료"}</Text>
       </Pressable>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, gap: 8, backgroundColor: "#f5f5f7" },
-  name: { fontSize: 18, fontWeight: "600", color: "#555" },
-  stats: { alignItems: "center", marginTop: 40, gap: 4 },
-  label: { fontSize: 14, color: "#888", marginTop: 16 },
+  container: { flex: 1, padding: space.screen, gap: space.gap, backgroundColor: colors.bg },
+  name: { fontSize: 18, fontWeight: "600", color: colors.ink, textAlign: "center" },
+  center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 8 },
+  label: { fontSize: 14, color: colors.text2 },
   elapsed: {
     fontSize: 64,
     fontWeight: "700",
-    color: "#111",
+    color: colors.ink,
     fontVariant: ["tabular-nums"],
   },
-  count: { fontSize: 32, fontWeight: "700", color: "#111" },
-  warn: { fontSize: 14, color: "#c0392b", textAlign: "center", marginTop: 16 },
-  button: {
-    marginTop: "auto",
-    backgroundColor: "#c0392b",
-    borderRadius: 12,
-    paddingVertical: 20,
-    alignItems: "center",
-  },
-  buttonDisabled: { opacity: 0.5 },
-  buttonText: { color: "#fff", fontSize: 20, fontWeight: "700" },
+  warn: { fontSize: 14, color: colors.danger, textAlign: "center", marginTop: 16 },
 });
