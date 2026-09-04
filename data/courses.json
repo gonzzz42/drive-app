@@ -3,7 +3,11 @@
     "id": "olympic-magok-gayang-night",
     "name": "마곡 → 가양 빛의 관문",
     "region": "서울서부",
-    "tags": ["밤", "조명", "도시고속"],
+    "tags": [
+      "밤",
+      "조명",
+      "도시고속"
+    ],
     "distance_km": 12.4,
     "start_name": "마곡대교",
     "end_name": "가양대교",
@@ -15,17 +19,31 @@
     "avoid_time": "주말 낮, 퇴근 정체",
     "search_tmap": "가양대교",
     "polyline": [
-      { "lat": 37.569, "lng": 126.828 },
-      { "lat": 37.565, "lng": 126.845 },
-      { "lat": 37.561, "lng": 126.86 }
+      {
+        "lat": 37.569,
+        "lng": 126.828
+      },
+      {
+        "lat": 37.565,
+        "lng": 126.845
+      },
+      {
+        "lat": 37.561,
+        "lng": 126.86
+      }
     ],
-    "is_official": false
+    "is_official": true,
+    "featured": true
   },
   {
     "id": "paju-77-pyeonghwa-goyang",
     "name": "파주 77번·평화로 → 고양",
     "region": "경기서북",
-    "tags": ["국도", "파주", "고양"],
+    "tags": [
+      "국도",
+      "파주",
+      "고양"
+    ],
     "distance_km": 0,
     "start_name": "파주 평화로",
     "end_name": "고양",
@@ -33,13 +51,18 @@
     "avoid_time": "",
     "search_tmap": "파주 평화로",
     "polyline": [],
-    "is_official": false
+    "is_official": true,
+    "featured": false
   },
   {
     "id": "jayu-ro-haengju-imjingak",
     "name": "자유로 행주 → 임진각",
     "region": "경기서북",
-    "tags": ["강변", "밤", "파주"],
+    "tags": [
+      "강변",
+      "밤",
+      "파주"
+    ],
     "distance_km": 46,
     "start_name": "행주대교 북단",
     "end_name": "임진각",
@@ -51,10 +74,20 @@
     "avoid_time": "주말 오후",
     "search_tmap": "임진각",
     "polyline": [
-      { "lat": 37.599, "lng": 126.81 },
-      { "lat": 37.75, "lng": 126.78 },
-      { "lat": 37.889, "lng": 126.74 }
+      {
+        "lat": 37.599,
+        "lng": 126.81
+      },
+      {
+        "lat": 37.75,
+        "lng": 126.78
+      },
+      {
+        "lat": 37.889,
+        "lng": 126.74
+      }
     ],
-    "is_official": false
+    "is_official": true,
+    "featured": true
   }
 ]

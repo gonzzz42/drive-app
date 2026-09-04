@@ -18,7 +18,10 @@ export type Course = {
   avoid_time: string;
   search_tmap: string;
   polyline: LatLng[];
-  is_official: boolean;
+  is_official: boolean; // 앱이 고른 공식 코스인지
+  featured?: boolean; // 추천 탭 메인 선반에 올릴지
+  source_name?: string; // 원본 계정/글 이름 (없어도 됨)
+  source_url?: string; // 원본 글 링크 (없어도 됨)
 };
 
 export const courses: Course[] = coursesJson as Course[];
