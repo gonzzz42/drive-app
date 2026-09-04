@@ -74,6 +74,19 @@ export async function listLocalTrips(): Promise<Trip[]> {
   return trips;
 }
 
+// 기록 좌표를 코스 선(polyline) 파일로 저장한다. 문서 폴더의 course-<id>-polyline.json.
+// 앱은 data/courses.json을 고칠 수 없으므로, 이 파일을 컴퓨터로 보내 직접 붙여넣는다.
+// 돌려주는 값은 파일 경로(uri).
+export async function saveCoursePolylineFile(
+  courseId: string,
+  points: TripPoint[],
+): Promise<string> {
+  const polyline = points.map((p) => ({ lat: p.lat, lng: p.lng }));
+  const file = new File(Paths.document, `course-${courseId}-polyline.json`);
+  file.write(JSON.stringify(polyline));
+  return file.uri;
+}
+
 // 19시부터 새벽 6시 전까지는 밤
 export function isNight(epochMs: number): boolean {
   const hour = new Date(epochMs).getHours();

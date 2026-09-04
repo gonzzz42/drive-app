@@ -10,7 +10,17 @@ import { captureRef } from "react-native-view-shot";
 import { getCourse } from "../../src/lib/courses";
 import { judgeCompletion, pathLengthMeters } from "../../src/lib/geo";
 import { supabase } from "../../src/lib/supabase";
-import { isNight, loadTrip, saveTrip, uploadTrip, type Trip } from "../../src/lib/trips";
+import {
+  isNight,
+  loadTrip,
+  saveCoursePolylineFile,
+  saveTrip,
+  uploadTrip,
+  type Trip,
+} from "../../src/lib/trips";
+
+// 코스 선이 이 개수보다 적으면 "기록을 코스 선으로 저장" 버튼을 보여준다
+const SPARSE_POLYLINE = 10;
 
 function formatDate(epochMs: number): string {
   const d = new Date(epochMs);
@@ -123,6 +133,39 @@ export default function ResultScreen() {
     }
   }
 
+  // 코스 선이 점 몇 개뿐이면 이 기록의 좌표를 코스 선 파일로 내보낼 수 있게 한다
+  const canExportPolyline =
+    !!trip && !!course && course.polyline.length < SPARSE_POLYLINE && trip.points.length >= 2;
+
+  async function exportPolyline() {
+    if (!trip || !course || busy) return;
+    setBusy(true);
+    try {
+      const uri = await saveCoursePolylineFile(course.id, trip.points);
+      const fileName = `course-${course.id}-polyline.json`;
+      Alert.alert(
+        "코스 선 파일 저장됨",
+        `${fileName}\n(${trip.points.length}개 점)\n\n"공유"로 이 파일을 컴퓨터로 보낸 뒤, 파일 내용을 data/courses.json 의 이 코스 "polyline" 값에 붙여넣으세요.`,
+        [
+          { text: "닫기", style: "cancel" },
+          {
+            text: "공유",
+            onPress: () => {
+              Sharing.shareAsync(uri, {
+                mimeType: "application/json",
+                dialogTitle: fileName,
+              }).catch(() => Alert.alert("공유 실패", "공유 창을 열지 못했습니다."));
+            },
+          },
+        ],
+      );
+    } catch {
+      Alert.alert("저장 실패", "코스 선 파일을 저장하지 못했습니다.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const syncText = !supabase
     ? "서버 미설정 (.env 없음) · 폰에만 저장됨"
     : sync === "uploading"
@@ -198,6 +241,16 @@ export default function ResultScreen() {
               <Text style={styles.subButtonText}>공유</Text>
             </Pressable>
           </View>
+
+          {canExportPolyline ? (
+            <Pressable
+              style={[styles.button, styles.subButton, busy && styles.disabled]}
+              onPress={exportPolyline}
+              disabled={busy}
+            >
+              <Text style={styles.subButtonText}>이 기록을 코스 선으로 저장</Text>
+            </Pressable>
+          ) : null}
         </>
       )}
 
