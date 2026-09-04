@@ -1,80 +1,40 @@
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
-import { FlatList, Platform, Pressable, StyleSheet, Text, View } from "react-native";
-import MapView, { Polyline, type LatLng as MapLatLng, type Region } from "react-native-maps";
-import { getCourse } from "../../src/lib/courses";
+import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { getCourse, type LatLng } from "../../src/lib/courses";
+import { dateLabel, distanceLabel, durationLabel } from "../../src/lib/format";
 import { pathLengthMeters } from "../../src/lib/geo";
 import { listLocalTrips, type Trip } from "../../src/lib/trips";
+import { RouteSketch } from "../../src/ui/RouteSketch";
+import { colors, hairline, radius, space } from "../../src/ui/theme";
 
-// 히스토리 탭: 폰에 저장된 기록을 시간순(최신 위)으로. 레벨·완주율·미주행 목록 없음.
+// 히스토리 탭: 폰에 저장된 기록을 최신순으로. 행마다 코스명·날짜·거리·시간 + 72px 경로 그림.
+// 카드·아이콘·횟수 배지 없음. 지도 타일 없음.
 
-// Android Expo Go는 지도가 검게 나오므로 작은 궤적 지도는 iOS에서만 그린다.
-// (Android 개발 빌드에서 지도가 보이면 이 조건을 지우면 된다)
-const SHOW_MINI_MAP = Platform.OS === "ios";
+const THUMB = 72;
 
 type Row = {
   trip: Trip;
   name: string;
-  km: string;
-  minutes: number;
-  count: number; // 같은 코스를 탄 횟수
+  meta: string; // "9월 4일 · 12.4 km · 58분"
+  points: LatLng[]; // 기록 좌표. 없으면 코스 경로선
 };
 
-function formatDate(epochMs: number): string {
-  const d = new Date(epochMs);
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}.${mm}.${dd}`;
-}
-
 function buildRows(trips: Trip[]): Row[] {
-  const countByCourse = new Map<string, number>();
-  for (const t of trips) {
-    countByCourse.set(t.courseId, (countByCourse.get(t.courseId) ?? 0) + 1);
-  }
-  return trips.map((trip) => ({
-    trip,
-    name: getCourse(trip.courseId)?.name ?? "알 수 없는 코스",
-    km: (pathLengthMeters(trip.points) / 1000).toFixed(1),
-    minutes: Math.round((trip.endedAt - trip.startedAt) / 60000),
-    count: countByCourse.get(trip.courseId) ?? 1,
-  }));
-}
-
-// 궤적 전체가 들어오는 작은 지도 영역
-function regionFor(points: MapLatLng[]): Region {
-  const lats = points.map((p) => p.latitude);
-  const lngs = points.map((p) => p.longitude);
-  const minLat = Math.min(...lats);
-  const maxLat = Math.max(...lats);
-  const minLng = Math.min(...lngs);
-  const maxLng = Math.max(...lngs);
-  return {
-    latitude: (minLat + maxLat) / 2,
-    longitude: (minLng + maxLng) / 2,
-    latitudeDelta: Math.max((maxLat - minLat) * 1.6, 0.01),
-    longitudeDelta: Math.max((maxLng - minLng) * 1.6, 0.01),
-  };
-}
-
-function MiniMap({ trip }: { trip: Trip }) {
-  const points = trip.points.map((p) => ({ latitude: p.lat, longitude: p.lng }));
-  if (!SHOW_MINI_MAP || points.length < 2) return null;
-  return (
-    <View style={styles.miniMap} pointerEvents="none">
-      <MapView
-        style={StyleSheet.absoluteFill}
-        initialRegion={regionFor(points)}
-        scrollEnabled={false}
-        zoomEnabled={false}
-        rotateEnabled={false}
-        pitchEnabled={false}
-        liteMode
-      >
-        <Polyline coordinates={points} strokeWidth={3} strokeColor="#0a66c2" />
-      </MapView>
-    </View>
-  );
+  return trips.map((trip) => {
+    const course = getCourse(trip.courseId);
+    return {
+      trip,
+      name: course?.name ?? "알 수 없는 코스",
+      meta: [
+        dateLabel(trip.startedAt),
+        distanceLabel(pathLengthMeters(trip.points) / 1000),
+        durationLabel(trip.endedAt - trip.startedAt),
+      ].join(" · "),
+      points: trip.points.length > 0 ? trip.points : (course?.polyline ?? []),
+    };
+  });
 }
 
 function HistoryRow({ row }: { row: Row }) {
@@ -85,22 +45,20 @@ function HistoryRow({ row }: { row: Row }) {
       onPress={() => router.push(`/result/${row.trip.id}`)}
     >
       <View style={styles.rowText}>
-        <View style={styles.nameLine}>
-          <Text style={styles.name} numberOfLines={1}>
-            {row.name}
-          </Text>
-          {row.count >= 2 ? <Text style={styles.count}>{row.count}회</Text> : null}
-        </View>
-        <Text style={styles.meta}>
-          {row.km} km · {row.minutes}분 · {formatDate(row.trip.startedAt)}
+        <Text style={styles.name} numberOfLines={1}>
+          {row.name}
+        </Text>
+        <Text style={styles.meta} numberOfLines={1}>
+          {row.meta}
         </Text>
       </View>
-      <MiniMap trip={row.trip} />
+      <RouteSketch points={row.points} width={THUMB} height={THUMB} radius={radius.thumb} />
     </Pressable>
   );
 }
 
 export default function HistoryScreen() {
+  const insets = useSafeAreaInsets();
   const [rows, setRows] = useState<Row[]>([]);
   const [loaded, setLoaded] = useState(false);
 
@@ -120,14 +78,16 @@ export default function HistoryScreen() {
   );
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top + space.screen }]}>
+      <Text style={styles.title}>히스토리</Text>
       <FlatList
         data={rows}
         keyExtractor={(item) => item.trip.id}
         renderItem={({ item }) => <HistoryRow row={item} />}
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
         contentContainerStyle={styles.list}
         ListEmptyComponent={
-          loaded ? <Text style={styles.empty}>아직 탄 길이 없습니다</Text> : null
+          loaded ? <Text style={styles.empty}>아직 기록이 없습니다</Text> : null
         }
       />
     </View>
@@ -135,31 +95,25 @@ export default function HistoryScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f5f5f7" },
-  list: { padding: 16, gap: 12, flexGrow: 1 },
-  empty: { fontSize: 15, color: "#888", textAlign: "center", marginTop: 40 },
+  container: { flex: 1, backgroundColor: colors.bg },
+  title: {
+    fontSize: 22,
+    fontWeight: "700",
+    color: colors.ink,
+    paddingHorizontal: space.screen,
+    marginBottom: space.gap,
+  },
+  list: { paddingHorizontal: space.screen, paddingBottom: space.screen, flexGrow: 1 },
+  empty: { fontSize: 15, color: colors.text2, textAlign: "center", marginTop: 40 },
   row: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 16,
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: space.gap,
+    paddingVertical: 16,
   },
-  pressed: { opacity: 0.7 },
+  separator: { height: hairline, backgroundColor: colors.line },
+  pressed: { opacity: 0.85 },
   rowText: { flex: 1, gap: 4 },
-  nameLine: { flexDirection: "row", alignItems: "center", gap: 8 },
-  name: { fontSize: 17, fontWeight: "700", color: "#111", flexShrink: 1 },
-  count: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#333",
-    backgroundColor: "#eee",
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    overflow: "hidden",
-  },
-  meta: { fontSize: 14, color: "#555" },
-  miniMap: { width: 72, height: 72, borderRadius: 8, overflow: "hidden" },
+  name: { fontSize: 18, fontWeight: "700", color: colors.ink },
+  meta: { fontSize: 14, color: colors.text2 },
 });
