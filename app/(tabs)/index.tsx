@@ -1,7 +1,15 @@
 import * as Location from "expo-location";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  Alert,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type LayoutChangeEvent,
+} from "react-native";
 import MapView, {
   Marker,
   Polyline,
@@ -9,15 +17,18 @@ import MapView, {
   type Region,
 } from "react-native-maps";
 import { courses, type Course, type LatLng } from "../../src/lib/courses";
+import { distanceLabel, roundTripLabel } from "../../src/lib/format";
 import { naviUrls, openFirst, startTarget } from "../../src/lib/navi";
 import {
   DUMMY_LOCATION,
   estimateRoundTripMinutes,
   pickTodayCourse,
-  reasonFor,
 } from "../../src/lib/recommend";
+import { RouteSketch, STATIC_ROUTE_ONLY } from "../../src/ui/RouteSketch";
+import { buttons, colors, lightMapStyle, radius, space } from "../../src/ui/theme";
 
-// 시작 탭: 오늘 길 1개 + 지도 + "이 길로 출발"(내비만). 기록은 자동으로 켜지 않는다.
+// 시작 탭: 위 60% 지도, 아래 40% 패널(오늘의 코스 → 코스명 → 구간 → 예상 시간 → 길찾기).
+// 기록은 여기서 시작하지 않는다. Android Expo Go에서는 지도 대신 정적 경로 그림.
 
 // 기본 좌표: 서울 시청
 const SEOUL: Region = {
@@ -27,25 +38,27 @@ const SEOUL: Region = {
   longitudeDelta: 0.2,
 };
 
-const MAP_PADDING = { top: 60, right: 40, bottom: 40, left: 40 };
+const MAP_PADDING = { top: 40, right: 40, bottom: 40 + radius.panelTop, left: 40 };
 
 function toMap(p: LatLng): MapLatLng {
   return { latitude: p.lat, longitude: p.lng };
 }
 
-// 코스 시작 핀 좌표. 오늘 길은 시작 좌표가 있는 코스만 고르므로 보통 있다.
-function startPinOf(course: Course): MapLatLng | undefined {
-  if (course.start_lat != null && course.start_lng != null) {
-    return { latitude: course.start_lat, longitude: course.start_lng };
-  }
-  return course.polyline.length > 0 ? toMap(course.polyline[0]) : undefined;
+// 시작·도착 좌표. 코스에 없으면 경로선의 첫·마지막 점.
+function startOf(c: Course): LatLng | undefined {
+  if (c.start_lat != null && c.start_lng != null) return { lat: c.start_lat, lng: c.start_lng };
+  return c.polyline[0];
+}
+function endOf(c: Course): LatLng | undefined {
+  if (c.end_lat != null && c.end_lng != null) return { lat: c.end_lat, lng: c.end_lng };
+  return c.polyline.length > 1 ? c.polyline[c.polyline.length - 1] : undefined;
 }
 
 // 좌표 목록을 모두 담는 지도 영역 (첫 화면용)
-function regionFor(points: MapLatLng[]): Region {
+function regionFor(points: LatLng[]): Region {
   if (points.length === 0) return SEOUL;
-  const lats = points.map((p) => p.latitude);
-  const lngs = points.map((p) => p.longitude);
+  const lats = points.map((p) => p.lat);
+  const lngs = points.map((p) => p.lng);
   const minLat = Math.min(...lats);
   const maxLat = Math.max(...lats);
   const minLng = Math.min(...lngs);
@@ -62,11 +75,11 @@ export default function StartScreen() {
   const router = useRouter();
   const mapRef = useRef<MapView>(null);
   const [mapReady, setMapReady] = useState(false);
+  const [mapSize, setMapSize] = useState({ w: 0, h: 0 });
   const [opening, setOpening] = useState(false);
-  // 내 위치. 권한 거부·실패·아직 로딩 중이면 undefined → 더미 위치(서울 강서)로 고른다.
+  // 내 위치. 권한 거부·실패·로딩 중이면 undefined → 더미 위치(서울 강서)로 고른다.
   const [here, setHere] = useState<LatLng | undefined>();
 
-  // 첫 화면을 그린 뒤에 위치 권한을 요청한다. 허용되면 오늘 길·분·지도를 갱신한다.
   useEffect(() => {
     let alive = true;
     async function load() {
@@ -92,124 +105,160 @@ export default function StartScreen() {
 
   const base = here ?? DUMMY_LOCATION;
   const pick = pickTodayCourse(courses, new Date(), base);
-  const line = pick ? pick.polyline.map(toMap) : [];
-  const startPin = pick ? startPinOf(pick) : undefined;
+  const line: LatLng[] = pick ? pick.polyline : [];
+  const start = pick ? startOf(pick) : undefined;
+  const end = pick ? endOf(pick) : undefined;
+  // 지도에 담을 점: 경로선 + 시작 + 도착 (내 위치는 넣지 않는다)
+  const bounds: LatLng[] = [...line];
+  if (start) bounds.push(start);
+  if (end) bounds.push(end);
+  // 정적 그림용 점: 경로선. 없으면 시작·도착만.
+  const sketchPoints: LatLng[] =
+    line.length > 0 ? line : [start, end].filter((p): p is LatLng => p != null);
 
-  // 지도에 코스 선 + 시작 핀 + (있으면) 내 위치가 다 들어오게 맞춘다
   useEffect(() => {
     if (!mapReady || !mapRef.current) return;
-    const pts: MapLatLng[] = [...line];
-    if (startPin) pts.push(startPin);
-    if (here) pts.push(toMap(here));
-    if (pts.length >= 2) {
-      mapRef.current.fitToCoordinates(pts, { edgePadding: MAP_PADDING, animated: false });
-    } else if (pts.length === 1) {
-      mapRef.current.animateToRegion({ ...pts[0], latitudeDelta: 0.05, longitudeDelta: 0.05 }, 0);
+    if (bounds.length >= 2) {
+      mapRef.current.fitToCoordinates(bounds.map(toMap), {
+        edgePadding: MAP_PADDING,
+        animated: false,
+      });
+    } else if (bounds.length === 1) {
+      mapRef.current.animateToRegion(
+        { ...toMap(bounds[0]), latitudeDelta: 0.05, longitudeDelta: 0.05 },
+        0,
+      );
     }
-    // pick과 here가 바뀔 때만 다시 맞춘다
+    // 코스가 바뀔 때만 다시 맞춘다
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapReady, pick?.id, here?.lat, here?.lng]);
+  }, [mapReady, pick?.id]);
 
-  // 티맵을 먼저, 없으면 카카오맵. 목적지는 코스 시작점. 기록 화면으로 이동하지 않는다.
+  // 내비 앱으로 코스 시작점까지. 기록 화면으로 이동하지 않는다.
   async function openNavi() {
     if (!pick || opening) return;
     setOpening(true);
     try {
       const ok = await openFirst(naviUrls(startTarget(pick)));
-      if (!ok) {
-        Alert.alert("내비를 열 수 없습니다", "티맵, 카카오맵, 브라우저를 모두 열지 못했습니다.");
-      }
+      if (!ok) Alert.alert("길찾기를 열 수 없습니다", "설치된 내비 앱이 없습니다.");
     } finally {
       setOpening(false);
     }
   }
 
-  function goBrowse() {
-    router.navigate("/browse");
+  function onMapLayout(e: LayoutChangeEvent) {
+    const { width, height } = e.nativeEvent.layout;
+    setMapSize({ w: width, h: height });
   }
+
+  const timeText = pick
+    ? (roundTripLabel(estimateRoundTripMinutes(pick, base)) ?? distanceLabel(pick.distance_km))
+    : "";
 
   return (
     <View style={styles.container}>
-      <MapView
-        ref={mapRef}
-        style={styles.map}
-        initialRegion={regionFor(startPin ? [...line, startPin] : line)}
-        showsUserLocation={here != null}
-        onMapReady={() => setMapReady(true)}
-      >
-        {line.length > 1 ? (
-          <Polyline coordinates={line} strokeWidth={4} strokeColor="#0a66c2" />
-        ) : null}
-        {startPin && pick ? <Marker coordinate={startPin} title={pick.start_name} /> : null}
-      </MapView>
-
-      <View style={styles.panel}>
-        {pick ? (
-          <View style={styles.card}>
-            <Text style={styles.cardName}>{pick.name}</Text>
-            <Text style={styles.cardLine} numberOfLines={1}>
-              약 {estimateRoundTripMinutes(pick, base)}분 · {reasonFor(pick)}
-            </Text>
-            <Text style={styles.hint}>{here ? "내 위치 기준" : "대략 강서 기준"}</Text>
-          </View>
+      {/* 지도 60%. 터치는 막는다. */}
+      <View style={styles.map} pointerEvents="none" onLayout={onMapLayout}>
+        {STATIC_ROUTE_ONLY ? (
+          mapSize.w > 0 ? (
+            <RouteSketch points={sketchPoints} width={mapSize.w} height={mapSize.h} stroke={4} />
+          ) : null
         ) : (
-          <View style={styles.card}>
-            <Text style={styles.cardName}>추천에서 길을 고르세요</Text>
-            <Pressable onPress={goBrowse} hitSlop={8}>
-              <Text style={styles.link}>추천 탭으로 가기</Text>
+          <MapView
+            ref={mapRef}
+            style={StyleSheet.absoluteFill}
+            initialRegion={regionFor(bounds)}
+            userInterfaceStyle="light"
+            customMapStyle={Platform.OS === "android" ? lightMapStyle : undefined}
+            showsPointsOfInterests={false}
+            showsCompass={false}
+            toolbarEnabled={false}
+            onMapReady={() => setMapReady(true)}
+          >
+            {line.length > 1 ? (
+              <Polyline
+                coordinates={line.map(toMap)}
+                strokeColor={colors.accent}
+                strokeWidth={5}
+                lineCap="round"
+                lineJoin="round"
+                lineDashPattern={line.length < 4 ? [1, 10] : undefined}
+              />
+            ) : null}
+            {start ? (
+              <Marker
+                coordinate={toMap(start)}
+                anchor={{ x: 0.5, y: 0.5 }}
+                tracksViewChanges={false}
+              >
+                <View style={styles.startDot} />
+              </Marker>
+            ) : null}
+            {end ? <Marker coordinate={toMap(end)} pinColor={colors.pinEnd} /> : null}
+          </MapView>
+        )}
+      </View>
+
+      {/* 패널 40%. 지도와 20 겹친다. 안에 카드를 또 넣지 않는다. */}
+      <View style={styles.panel}>
+        <Text style={styles.label}>오늘의 코스</Text>
+        {pick ? (
+          <>
+            <Pressable onPress={() => router.push(`/course/${pick.id}`)} style={styles.titleBlock}>
+              <Text style={styles.name} numberOfLines={2}>
+                {pick.name}
+              </Text>
+              <Text style={styles.route} numberOfLines={1}>
+                {pick.start_name} → {pick.end_name}
+              </Text>
             </Pressable>
-          </View>
+            <Text style={styles.time}>{timeText}</Text>
+          </>
+        ) : (
+          <Text style={styles.route}>좌표가 있는 코스가 없습니다</Text>
         )}
 
-        <Text style={styles.notice}>인증 카드를 남기려면 출발 전에 기록을 켜 두세요.</Text>
         <Pressable
-          style={[styles.primary, (!pick || opening) && styles.disabled]}
+          style={({ pressed }) => [
+            buttons.primary,
+            styles.button,
+            pressed && buttons.primaryPressed,
+            (!pick || opening) && buttons.primaryDisabled,
+          ]}
           onPress={openNavi}
           disabled={!pick || opening}
         >
-          <Text style={styles.primaryText}>이 길로 출발</Text>
+          <Text style={buttons.primaryText}>길찾기</Text>
         </Pressable>
-        <View style={styles.row}>
-          <Pressable
-            onPress={() => pick && router.push(`/record/${pick.id}`)}
-            disabled={!pick}
-            hitSlop={8}
-          >
-            <Text style={[styles.textButton, !pick && styles.textDisabled]}>기록만 시작</Text>
-          </Pressable>
-          <Pressable onPress={goBrowse} hitSlop={8}>
-            <Text style={styles.link}>다른 길 보기</Text>
-          </Pressable>
-        </View>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f5f5f7" },
-  map: { flex: 1 },
-  panel: { padding: 16, gap: 10 },
-  card: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 16,
-    gap: 4,
+  container: { flex: 1, backgroundColor: colors.bg },
+  map: { flex: 60, backgroundColor: colors.bg },
+  panel: {
+    flex: 40,
+    marginTop: -radius.panelTop,
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radius.panelTop,
+    borderTopRightRadius: radius.panelTop,
+    padding: space.screen,
+    gap: space.gap,
   },
-  cardName: { fontSize: 20, fontWeight: "700", color: "#111" },
-  cardLine: { fontSize: 14, color: "#555" },
-  hint: { fontSize: 12, color: "#999" },
-  notice: { fontSize: 13, color: "#666", textAlign: "center" },
-  primary: {
-    backgroundColor: "#111",
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: "center",
+  label: { fontSize: 13, color: colors.text2 },
+  titleBlock: { gap: 4 },
+  name: { fontSize: 28, fontWeight: "700", color: colors.ink },
+  route: { fontSize: 16, color: colors.text2 },
+  time: { fontSize: 16, fontWeight: "600", color: colors.ink },
+  button: { marginTop: "auto" },
+  // 시작 마커: 파란 원 12, 흰 테두리 2.5
+  startDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: colors.accent,
+    borderWidth: 2.5,
+    borderColor: "#FFFFFF",
   },
-  primaryText: { color: "#fff", fontSize: 17, fontWeight: "700" },
-  disabled: { opacity: 0.4 },
-  row: { flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 8 },
-  textButton: { color: "#888", fontSize: 15, fontWeight: "600" },
-  textDisabled: { color: "#bbb" },
-  link: { color: "#0a66c2", fontSize: 15, fontWeight: "600" },
 });
