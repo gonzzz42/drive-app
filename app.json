@@ -14,6 +14,10 @@
         "LSApplicationQueriesSchemes": [
           "tmap",
           "kakaomap"
+        ],
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "주행 중 화면을 끄거나 내비 앱을 써도 경로를 기록하기 위해 위치가 필요합니다.",
+        "UIBackgroundModes": [
+          "location"
         ]
       }
     },
@@ -21,7 +25,9 @@
       "package": "com.driveapp.app",
       "permissions": [
         "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
+        "ACCESS_COARSE_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION"
       ]
     },
     "plugins": [
@@ -30,7 +36,10 @@
         "expo-location",
         {
           "locationWhenInUsePermission": "주행 경로를 기록하기 위해 위치가 필요합니다.",
-          "isAndroidBackgroundLocationEnabled": false
+          "locationAlwaysAndWhenInUsePermission": "주행 중 화면을 끄거나 내비 앱을 써도 경로를 기록하기 위해 위치가 필요합니다.",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": false,
+          "isAndroidForegroundServiceEnabled": true
         }
       ],
       [

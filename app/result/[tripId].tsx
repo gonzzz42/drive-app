@@ -1,7 +1,7 @@
 // SDK 57의 기본 expo-media-library는 새 API(Next)라 Expo Go에 네이티브 모듈이 없다.
 // 사진첩 저장만 필요하므로 예전 API(legacy)를 쓴다.
 import * as MediaLibrary from "expo-media-library/legacy";
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Sharing from "expo-sharing";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -15,16 +15,25 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { captureRef } from "react-native-view-shot";
-import { getCourse, type LatLng } from "../../src/lib/courses";
+import { getCourse } from "../../src/lib/courses";
 import { dateLabel, distanceLabel, durationLabel } from "../../src/lib/format";
-import { judgeCompletion, pathLengthMeters } from "../../src/lib/geo";
+import { judgeCompletion, segmentsLengthMeters, splitSegments } from "../../src/lib/geo";
 import { supabase } from "../../src/lib/supabase";
-import { isNight, loadTrip, saveTrip, uploadTrip, type Trip } from "../../src/lib/trips";
+import {
+  isNight,
+  loadTrip,
+  saveTrip,
+  tripKind,
+  tripTitle,
+  uploadTrip,
+  type Trip,
+} from "../../src/lib/trips";
 import { RouteSketch } from "../../src/ui/RouteSketch";
 import { buttons, colors, hairline, radius, space } from "../../src/ui/theme";
 
-// 결과 화면: 캡처용 카드(밤/낮 → 경로 그림 → 코스명 → 거리·시간 → 날짜·완주) + 저장/공유 + 홈으로.
-// 서버 업로드는 조용히 한 번 시도하고 화면에 표시하지 않는다.
+// 결과 화면: 캡처용 카드(밤/낮 → 경로 그림 → 이름 → 거리·시간 → 날짜·완주) + 저장/공유 + 홈으로.
+// 그림은 실제 기록 좌표만 그린다. 자유 드라이브는 완주/미완주를 판정하지 않는다.
+// 서버 업로드는 조용히 한 번 시도하고 화면에 표시하지 않는다. 로컬 저장은 서버와 무관하다.
 
 const CARD_RADIUS = 20;
 const CARD_PADDING = 24;
@@ -48,11 +57,15 @@ export default function ResultScreen() {
     });
   }, [tripId]);
 
-  const course = getCourse(trip?.courseId);
-  // 완주 판정: 코스 polyline과 주행 궤적 비교
-  const result = trip && course ? judgeCompletion(course.polyline, trip.points) : undefined;
-  // 카드 그림: 기록 좌표. 없으면 코스 경로선.
-  const points: LatLng[] = trip && trip.points.length > 0 ? trip.points : (course?.polyline ?? []);
+  // 코스 주행일 때만 코스를 찾는다. 자유 드라이브는 코스가 없다.
+  const kind = trip ? tripKind(trip) : "unknown";
+  const course = trip && kind === "course" && trip.courseId ? getCourse(trip.courseId) : undefined;
+  // 끊긴 자리로 나눈 실제 기록 좌표. 거리도 끊긴 자리를 빼고 잰다.
+  const segments = trip ? splitSegments(trip.points) : [];
+  const distanceKm = segmentsLengthMeters(segments) / 1000;
+  // 완주 판정: 코스 주행에서 코스를 찾았을 때만
+  const result = trip && course ? judgeCompletion(course.polyline, segments) : undefined;
+  const title = trip ? tripTitle(trip, course?.name) : "";
 
   // 카드 비율 4:5. 화면 좌우 여백 20.
   const cardWidth = width - space.screen * 2;
@@ -64,7 +77,7 @@ export default function ResultScreen() {
   async function syncToServer(t: Trip) {
     if (!supabase || t.serverId) return;
     try {
-      const serverId = await uploadTrip(t, getCourse(t.courseId));
+      const serverId = await uploadTrip(t, course);
       const updated = { ...t, serverId };
       await saveTrip(updated);
       setTrip(updated);
@@ -133,14 +146,6 @@ export default function ResultScreen() {
       style={styles.container}
       contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + space.gap }]}
     >
-      <Stack.Screen
-        options={{
-          headerStyle: { backgroundColor: colors.bg },
-          headerShadowVisible: false,
-          headerTintColor: colors.ink,
-        }}
-      />
-
       {!loaded ? (
         <Text style={styles.meta}>불러오는 중…</Text>
       ) : !trip ? (
@@ -156,18 +161,23 @@ export default function ResultScreen() {
             <Text style={styles.cardLabel}>
               {isNight(trip.startedAt) ? "밤 드라이브" : "낮 드라이브"}
             </Text>
-            <RouteSketch points={points} width={sketchWidth} height={sketchHeight} stroke={4} />
+            <RouteSketch segments={segments} width={sketchWidth} height={sketchHeight} stroke={4} />
+            {trip.points.length === 0 ? (
+              <Text style={styles.cardDate}>기록된 위치가 없습니다</Text>
+            ) : null}
             <Text style={styles.cardTitle} numberOfLines={2}>
-              {course?.name ?? "알 수 없는 코스"}
+              {title}
             </Text>
             <Text style={styles.cardStat}>
-              {distanceLabel(pathLengthMeters(trip.points) / 1000)} ·{" "}
-              {durationLabel(trip.endedAt - trip.startedAt)}
+              {distanceLabel(distanceKm)} · {durationLabel(trip.endedAt - trip.startedAt)}
             </Text>
             <View style={styles.cardFoot}>
               <Text style={styles.cardDate}>{dateLabel(trip.startedAt, "dotted")}</Text>
               {result ? (
                 <Text style={styles.cardDate}>{result.completed ? "완주" : "미완주"}</Text>
+              ) : null}
+              {segments.length > 1 ? (
+                <Text style={styles.cardDate}>끊긴 구간 {segments.length - 1}곳</Text>
               ) : null}
             </View>
           </View>

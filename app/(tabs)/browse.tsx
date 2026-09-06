@@ -21,7 +21,7 @@ import {
 import { RouteSketch } from "../../src/ui/RouteSketch";
 import { colors, hairline, radius, space } from "../../src/ui/theme";
 
-// 추천 탭: 제목 → 가로 카드(최대 5, 위 경로 그림 + 아래 코스명·구간·왕복 시간) → 전체 코스 행.
+// 코스 탭: 제목 → 가로 카드(최대 5, 위 경로 그림 + 아래 코스명·구간·왕복 시간) → 전체 코스 행.
 // 검색·필터 없음. 지도 타일 없음(모두 RouteSketch).
 
 const MAX_SHELF = 5;
@@ -84,7 +84,7 @@ export default function BrowseScreen() {
       style={styles.container}
       contentContainerStyle={[styles.content, { paddingTop: insets.top + space.screen }]}
     >
-      <Text style={styles.title}>추천</Text>
+      <Text style={styles.title}>코스</Text>
 
       {shelf.length === 0 ? (
         <Text style={styles.empty}>코스가 없습니다</Text>

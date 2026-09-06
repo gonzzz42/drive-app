@@ -49,6 +49,12 @@ npx expo start --clear
 npm run typecheck
 ```
 
+기록 로직 테스트(폰 없이, 라이브러리 추가 없이):
+
+```bash
+npm test
+```
+
 ## Supabase 연결 (기록을 서버에 저장)
 
 1. supabase.com에서 프로젝트를 만든다.
@@ -105,10 +111,24 @@ npx eas-cli build --platform android --profile development
 
 iPhone은 Apple 지도를 써서 Expo Go에서도 지도가 보인다.
 
+## 주행 기록 (백그라운드 수집)
+
+드라이브 탭에서 **드라이브 시작**을 누르면 코스 없이도 기록이 시작된다. 기록 중에는 외부 내비로 가거나 화면을 꺼도 좌표가 이어진다.
+
+- 개발 빌드(EAS development)에서만 백그라운드 수집이 된다. Android는 "드라이브 기록 중" 알림, iOS는 파란 위치 표시가 뜬다.
+- Expo Go에서는 앱을 열어둔 동안만 기록된다 (기록 화면에 그렇게 표시된다).
+- 기록 화면을 나가도 기록은 끝나지 않는다. 드라이브 탭의 **기록으로 돌아가기**로 돌아온다.
+- 앱이 죽었다 켜지면 저장된 세션을 찾아 보여준다. 자동으로 다시 수집하지 않으며 **이어서 기록** 또는 **종료**를 고른다. 빠진 구간은 선을 잇지 않고 거리에서도 뺀다.
+- 좌표는 문서 폴더 `recording/points.jsonl`에 받는 대로 덧붙여지고, 종료하면 `trips/<id>.json`으로 남는다.
+
+구현 상태와 미검증 항목: `docs/stage1-status.md`
+
 ## 화면
 
-- / 지금 탈 만한 길
-- /course/[id] 코스 상세
-- /record/[id] 기록 중
+- / 드라이브 (내 위치 지도 + 드라이브 시작 + 추천 코스)
+- /browse 코스
+- /history 내 기록
+- /course/[id] 코스 상세 (이 코스 선택 / 출발점 길찾기)
+- /record 기록 중 (진행 중인 세션)
+- /record/[id] 코스 ID로 기록 시작 (옛 진입점, 같은 세션 로직)
 - /result/[tripId] 결과 템플릿
-- /album 도감

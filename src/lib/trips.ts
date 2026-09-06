@@ -1,24 +1,14 @@
 import { Directory, File, Paths } from "expo-file-system";
 import type { Course } from "./courses";
-import { judgeCompletion, pathLengthMeters } from "./geo";
+import { judgeCompletion, splitSegments, tripDistanceMeters } from "./geo";
 import { ensureSignedIn, supabase } from "./supabase";
+import { normalizeTrip, tripKind, type Trip, type TripPoint } from "./tripModel";
 
 // 주행 기록 하나. 폰 안의 문서 폴더에 trips/<id>.json 으로 저장한다.
+// 기록의 모양·유형(자유주행/코스 주행)은 tripModel.ts 에 있다.
 
-export type TripPoint = {
-  lat: number;
-  lng: number;
-  t: number; // 기록 시각 (epoch ms)
-};
-
-export type Trip = {
-  id: string;
-  courseId: string;
-  startedAt: number; // epoch ms
-  endedAt: number; // epoch ms
-  points: TripPoint[];
-  serverId?: string; // Supabase trips.id (서버에 저장됐으면 있음)
-};
+export type { Trip, TripKind, TripKindView, TripPoint } from "./tripModel";
+export { normalizeTrip, tripKind, tripTitle } from "./tripModel";
 
 function tripsDir(): Directory {
   return new Directory(Paths.document, "trips");
@@ -39,7 +29,7 @@ export async function loadTrip(id: string | undefined): Promise<Trip | undefined
   try {
     const file = new File(tripsDir(), `${id}.json`);
     if (!file.exists) return undefined;
-    return JSON.parse(await file.text()) as Trip;
+    return normalizeTrip(JSON.parse(await file.text()));
   } catch {
     return undefined;
   }
@@ -62,10 +52,8 @@ export async function listLocalTrips(): Promise<Trip[]> {
   for (const entry of entries) {
     if (!(entry instanceof File) || !entry.name.endsWith(".json")) continue;
     try {
-      const trip = JSON.parse(await entry.text()) as Trip;
-      if (typeof trip.id === "string" && Array.isArray(trip.points)) {
-        trips.push(trip);
-      }
+      const trip = normalizeTrip(JSON.parse(await entry.text()));
+      if (trip) trips.push(trip);
     } catch {
       // 이 파일만 건너뛴다
     }
@@ -95,20 +83,27 @@ export function isNight(epochMs: number): boolean {
 
 // 기록을 Supabase trips 테이블에 올린다. 성공하면 서버 id를 돌려준다.
 // RLS 때문에 user_id는 반드시 로그인한 사용자여야 한다.
+// 서버에 없는 새 필드(kind 등)는 보내지 않는다. 자유주행은 course_id null 로 올린다.
 export async function uploadTrip(trip: Trip, course: Course | undefined): Promise<string> {
   if (!supabase) throw new Error("Supabase 설정이 없습니다 (.env 확인)");
   const userId = await ensureSignedIn();
 
-  const result = course ? judgeCompletion(course.polyline, trip.points) : undefined;
+  const kind = tripKind(trip);
+  // 완주 판정은 코스 주행에서 코스를 찾았을 때만. 자유주행은 판정하지 않는다.
+  const result =
+    kind === "course" && course
+      ? judgeCompletion(course.polyline, splitSegments(trip.points))
+      : undefined;
   const row = {
     user_id: userId,
-    course_id: course?.id ?? null,
+    course_id: kind === "course" ? (course?.id ?? null) : null,
     started_at: new Date(trip.startedAt).toISOString(),
     ended_at: new Date(trip.endedAt).toISOString(),
-    distance_km: Math.round(pathLengthMeters(trip.points) / 100) / 10,
+    distance_km: Math.round(tripDistanceMeters(trip.points) / 100) / 10,
     duration_min: Math.round((trip.endedAt - trip.startedAt) / 60000),
     is_night: isNight(trip.startedAt),
     overlap_pct: result ? Math.round(result.overlap * 100) : null,
+    // 서버 completed 는 NOT NULL. 판정하지 않은 기록은 호환값 false (화면에는 '미완주'로 보이지 않는다)
     completed: result?.completed ?? false,
     path: trip.points,
   };

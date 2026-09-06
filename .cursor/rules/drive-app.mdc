@@ -5,8 +5,9 @@ alwaysApply: true
 
 한국 드라이브 코스 탐색 앱. UI는 한국어만.
 
-하지 말 것: 인스타 편집기, 자체 내비, 속도 랭킹, 언어 토글, 카카오 네이티브 SDK, 백그라운드 GPS.
+하지 말 것: 인스타 편집기, 자체 내비, 속도 랭킹, 언어 토글, 카카오 네이티브 SDK, 주행 중이 아닐 때의 GPS 추적.
 
-스택: Expo, TypeScript, expo-router, react-native-maps, expo-location.
+스택: Expo, TypeScript, expo-router, react-native-maps, expo-location, expo-task-manager(기록 중 백그라운드 수집).
+기록 규칙은 src/lib/recordingCore.ts 주석과 prompts/CLAUDE_CODE_PRODUCT_REBUILD.md 를 따른다.
 한 번에 화면/기능 하나만 수정한다.
 완료 후 바꾼 파일, 테스트 순서, 남은 작업을 한국어로 적는다.

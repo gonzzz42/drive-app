@@ -1,14 +1,15 @@
 {
   "name": "drive-app",
   "version": "1.0.0",
-  "main": "expo-router/entry",
+  "main": "index.ts",
   "private": true,
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node scripts/test.js"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
@@ -23,6 +24,7 @@
     "expo-router": "~57.0.18",
     "expo-sharing": "~57.0.17",
     "expo-status-bar": "~57.0.1",
+    "expo-task-manager": "~57.0.16",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.3",

@@ -23,10 +23,12 @@ import { getCourse, type Course, type LatLng } from "../../src/lib/courses";
 import { distanceLabel, roundTripLabel } from "../../src/lib/format";
 import { naviUrls, openFirst, startTarget } from "../../src/lib/navi";
 import { DUMMY_LOCATION, estimateRoundTripMinutes } from "../../src/lib/recommend";
+import { selectCourse } from "../../src/lib/selection";
 import { RouteSketch, STATIC_ROUTE_ONLY } from "../../src/ui/RouteSketch";
 import { buttons, colors, lightMapStyle, space } from "../../src/ui/theme";
 
-// 코스 상세: 투명 헤더(뒤로만) → 지도(경로선이 있을 때만) → 코스명·시간·구간·출처 → 길찾기 / 경로 남기기.
+// 코스 상세: 투명 헤더(뒤로만) → 지도(경로선이 있을 때만) → 코스명·시간·구간·출처 → 이 코스 선택 / 출발점 길찾기.
+// [이 코스 선택]은 드라이브 탭에 선택만 넣는다. 여기서 GPS 기록을 시작하지 않는다.
 // Android Expo Go에서는 지도 대신 정적 경로 그림.
 
 const MAP_HEIGHT_RATIO = 0.47; // 화면 높이의 45~50%
@@ -113,7 +115,14 @@ export default function CourseScreen() {
   const infoText = roundTrip ? (distance ? `${roundTrip} · ${distance}` : roundTrip) : distance;
   const sourceLabel = course.source_name ?? (course.source_url ? "원본 글" : undefined);
 
-  // 내비 앱으로 코스 시작점까지. 기록 화면으로 이동하지 않는다.
+  // 드라이브 탭에 이 코스를 선택해 두고 돌아간다. 기록은 거기서 [이 코스로 시작]을 눌러야 시작된다.
+  function chooseCourse() {
+    if (!course) return;
+    selectCourse(course.id);
+    router.navigate("/");
+  }
+
+  // 내비 앱으로 코스 시작점까지. 전체 코스 안내가 아니라 출발점까지만 안내한다.
   async function openNavi() {
     if (!course || opening) return;
     setOpening(true);
@@ -214,18 +223,13 @@ export default function CourseScreen() {
 
       <View style={[styles.bottom, { paddingBottom: insets.bottom + space.gap }]}>
         <Pressable
-          style={({ pressed }) => [
-            buttons.primary,
-            pressed && buttons.primaryPressed,
-            opening && buttons.primaryDisabled,
-          ]}
-          onPress={openNavi}
-          disabled={opening}
+          style={({ pressed }) => [buttons.primary, pressed && buttons.primaryPressed]}
+          onPress={chooseCourse}
         >
-          <Text style={buttons.primaryText}>길찾기</Text>
+          <Text style={buttons.primaryText}>이 코스 선택</Text>
         </Pressable>
-        <Pressable style={buttons.secondary} onPress={() => router.push(`/record/${course.id}`)}>
-          <Text style={buttons.secondaryText}>경로 남기기</Text>
+        <Pressable style={buttons.secondary} onPress={openNavi} disabled={opening}>
+          <Text style={buttons.secondaryText}>출발점 길찾기</Text>
         </Pressable>
       </View>
     </View>

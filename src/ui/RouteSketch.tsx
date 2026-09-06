@@ -7,6 +7,7 @@ import { colors, hairline } from "./theme";
 // 정적 경로 그림. 지도 타일 없이 SVG로 그린다.
 // 추천 카드, 전체 코스 썸네일, 히스토리 썸네일, 결과 카드에 같은 컴포넌트를 쓴다.
 // 기준: prompts/DESIGN_260904.md 2장
+// 기록이 끊긴 자리(segments)는 선으로 잇지 않고 비워 둔다.
 
 // Android Expo Go는 구글 지도 키가 만료돼 MapView가 검게 나온다.
 // 그때만 시작 탭·상세의 지도 자리에 이 그림을 대신 그린다. 개발 빌드와 iOS는 실제 지도.
@@ -16,7 +17,8 @@ export const STATIC_ROUTE_ONLY =
   Constants.appOwnership === AppOwnership.Expo;
 
 type Props = {
-  points: LatLng[];
+  points?: LatLng[]; // 이어진 선 하나
+  segments?: LatLng[][]; // 끊긴 자리로 나눈 선들. 있으면 points 대신 쓴다
   width: number;
   height: number;
   stroke?: number; // 선 굵기 (기본 3)
@@ -80,20 +82,32 @@ function simplifyPx(pts: XY[], minPx: number): XY[] {
 
 export function RouteSketch({
   points,
+  segments,
   width,
   height,
   stroke = 3,
   pins = true,
   radius = 0,
 }: Props) {
-  const pts =
-    points.length > 0
-      ? simplifyPx(project(thin(points, MAX_POINTS), width, height), MIN_SEG_PX)
-      : [];
-  const start = pts[0];
-  const end = pts.length > 1 ? pts[pts.length - 1] : undefined;
+  // 빈 구간은 버리고, 구간마다 점을 줄인 뒤, 전체를 한 상자에 투영한다
+  const segs = (segments ?? (points ? [points] : []))
+    .filter((s) => s.length > 0)
+    .map((s) => thin(s, MAX_POINTS));
+  const flat = segs.flat();
+  const projected = flat.length > 0 ? project(flat, width, height) : [];
+  const lines: XY[][] = [];
+  let offset = 0;
+  for (const s of segs) {
+    lines.push(simplifyPx(projected.slice(offset, offset + s.length), MIN_SEG_PX));
+    offset += s.length;
+  }
+  const first = lines[0];
+  const last = lines[lines.length - 1];
+  const start = first ? first[0] : undefined;
+  const end = last && flat.length > 1 ? last[last.length - 1] : undefined;
   // 원래 점이 4개 미만이면 실선 대신 점선 (좌표가 대략적이라는 뜻)
-  const dotted = points.length < 4;
+  const totalPoints = (segments ?? (points ? [points] : [])).reduce((n, s) => n + s.length, 0);
+  const dotted = totalPoints < 4;
 
   return (
     <View
@@ -108,17 +122,20 @@ export function RouteSketch({
       }}
     >
       <Svg width={width} height={height}>
-        {pts.length > 1 ? (
-          <Polyline
-            points={pts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ")}
-            fill="none"
-            stroke={colors.accent}
-            strokeWidth={stroke}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeDasharray={dotted ? "1 8" : undefined}
-          />
-        ) : null}
+        {lines.map((pts, i) =>
+          pts.length > 1 ? (
+            <Polyline
+              key={i}
+              points={pts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ")}
+              fill="none"
+              stroke={colors.accent}
+              strokeWidth={stroke}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeDasharray={dotted ? "1 8" : undefined}
+            />
+          ) : null,
+        )}
         {pins && start ? (
           <Circle
             cx={start.x}

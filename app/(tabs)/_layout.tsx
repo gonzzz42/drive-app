@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 import { colors, hairline } from "../../src/ui/theme";
 
-// 하단 탭 3개: 시작 / 추천 / 히스토리. 아이콘 + 글자. 헤더는 각 화면이 직접 그린다.
+// 하단 탭 3개: 드라이브 / 코스 / 내 기록. 아이콘 + 글자. 헤더는 각 화면이 직접 그린다.
 export default function TabsLayout() {
   return (
     <Tabs
@@ -24,25 +24,21 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "시작",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="location-outline" size={size} color={color} />
-          ),
+          title: "드라이브",
+          tabBarIcon: ({ color, size }) => <Ionicons name="car-outline" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="browse"
         options={{
-          title: "추천",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="compass-outline" size={size} color={color} />
-          ),
+          title: "코스",
+          tabBarIcon: ({ color, size }) => <Ionicons name="map-outline" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="history"
         options={{
-          title: "히스토리",
+          title: "내 기록",
           tabBarIcon: ({ color, size }) => <Ionicons name="time-outline" size={size} color={color} />,
         }}
       />

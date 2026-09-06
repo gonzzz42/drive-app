@@ -2,37 +2,38 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { getCourse, type LatLng } from "../../src/lib/courses";
+import { getCourse } from "../../src/lib/courses";
 import { dateLabel, distanceLabel, durationLabel } from "../../src/lib/format";
-import { pathLengthMeters } from "../../src/lib/geo";
-import { listLocalTrips, type Trip } from "../../src/lib/trips";
+import { segmentsLengthMeters, splitSegments } from "../../src/lib/geo";
+import { listLocalTrips, tripKind, tripTitle, type Trip, type TripPoint } from "../../src/lib/trips";
 import { RouteSketch } from "../../src/ui/RouteSketch";
 import { colors, hairline, radius, space } from "../../src/ui/theme";
 
-// 히스토리 탭: 폰에 저장된 기록을 최신순으로. 행마다 코스명·날짜·거리·시간 + 72px 경로 그림.
-// 카드·아이콘·횟수 배지 없음. 지도 타일 없음.
+// 내 기록 탭: 폰에 저장된 기록을 최신순으로. 행마다 이름·날짜·거리·시간 + 72px 경로 그림.
+// 그림은 실제 기록 좌표만 그린다 (코스 선으로 대신하지 않는다). 끊긴 자리는 비워 둔다.
 
 const THUMB = 72;
 
 type Row = {
   trip: Trip;
-  name: string;
+  name: string; // 코스명 · 자유 드라이브 · 코스 정보 없음
   meta: string; // "9월 4일 · 12.4 km · 58분"
-  points: LatLng[]; // 기록 좌표. 없으면 코스 경로선
+  segments: TripPoint[][];
 };
 
 function buildRows(trips: Trip[]): Row[] {
   return trips.map((trip) => {
-    const course = getCourse(trip.courseId);
+    const course = tripKind(trip) === "course" && trip.courseId ? getCourse(trip.courseId) : undefined;
+    const segments = splitSegments(trip.points);
     return {
       trip,
-      name: course?.name ?? "알 수 없는 코스",
+      name: tripTitle(trip, course?.name),
       meta: [
         dateLabel(trip.startedAt),
-        distanceLabel(pathLengthMeters(trip.points) / 1000),
+        distanceLabel(segmentsLengthMeters(segments) / 1000),
         durationLabel(trip.endedAt - trip.startedAt),
       ].join(" · "),
-      points: trip.points.length > 0 ? trip.points : (course?.polyline ?? []),
+      segments,
     };
   });
 }
@@ -52,7 +53,7 @@ function HistoryRow({ row }: { row: Row }) {
           {row.meta}
         </Text>
       </View>
-      <RouteSketch points={row.points} width={THUMB} height={THUMB} radius={radius.thumb} />
+      <RouteSketch segments={row.segments} width={THUMB} height={THUMB} radius={radius.thumb} />
     </Pressable>
   );
 }
@@ -79,7 +80,7 @@ export default function HistoryScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + space.screen }]}>
-      <Text style={styles.title}>히스토리</Text>
+      <Text style={styles.title}>내 기록</Text>
       <FlatList
         data={rows}
         keyExtractor={(item) => item.trip.id}
