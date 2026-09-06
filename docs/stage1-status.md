@@ -43,7 +43,12 @@
 
 고친 것: ExpoTaskManager 네이티브 모듈이 없을 때 앱이 죽던 것(guarded require), 드라이브 탭 패널이 안 보이던 것(ScrollView 는 flex 비율이 안 먹어 지도 높이를 40%로 고정), 종료 때 react-native-screens 크래시(화면 안에서 헤더를 바꾸지 않고 루트 레이아웃에 고정).
 
-## 실기기 미검증 (새 개발 빌드 필요)
+## 새 개발 빌드 (2026-09-06 14:20, EAS build f92a6702)
+
+expo-task-manager 와 foreground service 권한이 들어간 Android development APK. 사용자가 설치하고 앱이 정상 실행됨("잘된다"). APK: https://expo.dev/artifacts/eas/NDSUt6dLB33JAujzRaeKhOwtjqSUGE9rEr9cOt2ZdA8.apk
+주의: `eas build` 끝에 "설치할까요" 물음에는 n. 이 PC 에는 adb 가 없다. 개발 빌드는 `npx expo start` 가 켜져 있어야 화면이 뜬다(꺼져 있으면 흰 화면).
+
+## 실기기 미검증 (이동하면서 확인)
 
 `expo-task-manager` 와 권한 설정은 네이티브 변경이라 **새 EAS development 빌드**를 만들어야 한다 (`npx eas build -p android --profile development`). 기존 APK 로는 백그라운드 수집이 켜지지 않고 포그라운드로만 돈다.
 
